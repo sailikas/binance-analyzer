@@ -1,4 +1,4 @@
-name: Build Android APK
+﻿name: Build Android APK
 
 on:
   push:
@@ -14,6 +14,29 @@ jobs:
     steps:
     - name: Checkout代码
       uses: actions/checkout@v4
+      with:
+        clean: true
+    
+    - name: 验证buildozer.spec编码
+      run: |
+        echo "检查buildozer.spec文件..."
+        if [ ! -f buildozer.spec ]; then
+          echo "错误: buildozer.spec 不存在"
+          exit 1
+        fi
+        
+        # 检查BOM
+        if file buildozer.spec | grep -q "BOM"; then
+          echo "错误: 检测到BOM标记"
+          exit 1
+        fi
+        
+        # 显示文件前几个字节
+        echo "文件前20字节:"
+        xxd -l 20 buildozer.spec
+        
+        # 验证可以被Python读取
+        python3 -c "import configparser; c = configparser.ConfigParser(); c.read('buildozer.spec'); print('✓ buildozer.spec 格式正确')"
     
     - name: 设置Python环境
       uses: actions/setup-python@v5
@@ -29,8 +52,7 @@ jobs:
           python3-pip autoconf libtool pkg-config \
           zlib1g-dev libncurses5-dev libncursesw5-dev \
           libtinfo5 cmake libffi-dev libssl-dev \
-          build-essential ccache m4 libtool \
-          libffi-dev libssl-dev automake
+          build-essential ccache m4 automake
     
     - name: 设置Java环境变量
       run: |
@@ -44,29 +66,9 @@ jobs:
         pip install cython==0.29.33
         pip install virtualenv
     
-    - name: 缓存Buildozer目录
-      uses: actions/cache@v4
-      with:
-        path: |
-          .buildozer
-          ~/.buildozer
-        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
-        restore-keys: |
-          ${{ runner.os }}-buildozer-
-    
     - name: 构建APK
       run: |
-        # 确保buildozer.spec存在
-        if [ ! -f buildozer.spec ]; then
-          echo "错误: buildozer.spec 文件不存在"
-          exit 1
-        fi
-        
-        # 显示Python和Buildozer版本
-        python --version
-        buildozer --version
-        
-        # 构建
+        echo "开始构建APK..."
         buildozer -v android debug
       continue-on-error: false
     
