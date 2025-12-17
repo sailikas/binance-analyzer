@@ -1,0 +1,15 @@
+﻿# Kivy框架
+kivy==2.2.1
+kivymd==1.1.1
+
+# 网络请求
+requests==2.31.0
+
+# 通知功能
+plyer==2.1.0
+
+# Android支持
+pyjnius==1.5.0
+
+# 其他依赖
+python-dateutil==2.8.2
