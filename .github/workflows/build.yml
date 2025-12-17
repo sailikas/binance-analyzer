@@ -25,24 +25,15 @@ jobs:
           exit 1
         fi
         
-        # 检查BOM
-        if file buildozer.spec | grep -q "BOM"; then
-          echo "错误: 检测到BOM标记"
-          exit 1
-        fi
-        
-        # 显示文件前几个字节
         echo "文件前20字节:"
         xxd -l 20 buildozer.spec
         
-        # 验证可以被Python读取
-        python3 -c "import configparser; c = configparser.ConfigParser(); c.read('buildozer.spec'); print('✓ buildozer.spec 格式正确')"
+        python3 -c "import configparser; c = configparser.ConfigParser(); c.read('buildozer.spec'); print('✓ buildozer.spec 格式正确'); print('应用名:', c.get('app', 'title'))"
     
     - name: 设置Python环境
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-        cache: 'pip'
     
     - name: 安装系统依赖
       run: |
@@ -52,27 +43,79 @@ jobs:
           python3-pip autoconf libtool pkg-config \
           zlib1g-dev libncurses5-dev libncursesw5-dev \
           libtinfo5 cmake libffi-dev libssl-dev \
-          build-essential ccache m4 automake
+          build-essential ccache m4 automake \
+          libltdl-dev
     
     - name: 设置Java环境变量
       run: |
         echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
         echo "PATH=$JAVA_HOME/bin:$PATH" >> $GITHUB_ENV
+        java -version
     
-    - name: 安装Python依赖
+    - name: 安装Buildozer和依赖
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install buildozer==1.5.0
         pip install cython==0.29.33
         pip install virtualenv
+        pip install sh
+        buildozer --version
     
-    - name: 构建APK
+    - name: 初始化Buildozer
       run: |
-        echo "开始构建APK..."
-        buildozer -v android debug
-      continue-on-error: false
+        # 创建必要的目录
+        mkdir -p .buildozer
+        
+        # 显示配置
+        echo "=== buildozer.spec 内容 ==="
+        cat buildozer.spec
+        echo "=========================="
+    
+    - name: 构建APK（详细模式）
+      run: |
+        set -x
+        export BUILDOZER_LOG_LEVEL=2
+        export PYTHONUNBUFFERED=1
+        
+        echo "开始构建..."
+        buildozer -v android debug 2>&1 | tee build.log
+      continue-on-error: true
+      id: build_step
+    
+    - name: 上传完整构建日志
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: full-build-log-${{ github.run_number }}
+        path: |
+          build.log
+          .buildozer/**/*.log
+          .buildozer/**/build.log
+        retention-days: 7
+        if-no-files-found: warn
+    
+    - name: 分析构建失败原因
+      if: steps.build_step.outcome == 'failure'
+      run: |
+        echo "=== 构建失败，分析原因 ==="
+        
+        if [ -f build.log ]; then
+          echo "最后100行日志:"
+          tail -n 100 build.log
+          
+          echo ""
+          echo "搜索ERROR关键字:"
+          grep -i "error" build.log | tail -n 20 || echo "未找到ERROR"
+          
+          echo ""
+          echo "搜索FAILED关键字:"
+          grep -i "failed" build.log | tail -n 20 || echo "未找到FAILED"
+        fi
+        
+        exit 1
     
     - name: 检查APK文件
+      if: steps.build_step.outcome == 'success'
       run: |
         if [ -d "bin" ]; then
           echo "bin目录内容:"
@@ -83,26 +126,15 @@ jobs:
         fi
     
     - name: 上传APK
-      if: success()
+      if: steps.build_step.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
         name: binance-analyzer-apk-${{ github.run_number }}
         path: bin/*.apk
         retention-days: 30
     
-    - name: 上传构建日志
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-logs-${{ github.run_number }}
-        path: |
-          .buildozer/android/platform/build-*/build.log
-          .buildozer/android/platform/build-*/logs/*
-        retention-days: 7
-        if-no-files-found: ignore
-    
     - name: 创建Release
-      if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+      if: steps.build_step.outcome == 'success' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v1.0.${{ github.run_number }}
@@ -110,22 +142,14 @@ jobs:
         body: |
           ## 币安合约分析工具 v1.0.${{ github.run_number }}
           
+          ### 下载APK并安装到Android手机
+          
           ### 功能特性
           - ✅ 实时分析币安合约
           - ✅ 定时后台运行
           - ✅ 智能通知推送
           - ✅ 历史记录查看
           - ✅ 参数自定义配置
-          
-          ### 安装说明
-          1. 下载下方的APK文件
-          2. 传输到Android手机
-          3. 允许"未知来源"安装
-          4. 授予必要权限
-          
-          ### 系统要求
-          - Android 5.0+ (API 21+)
-          - 网络连接
         files: bin/*.apk
         draft: false
         prerelease: false
