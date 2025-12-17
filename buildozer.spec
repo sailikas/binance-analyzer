@@ -1,4 +1,4 @@
-﻿[app]
+[app]
 
 title = Binance Analyzer
 package.name = binanceanalyzer
@@ -26,3 +26,4 @@ log_level = 2
 
 log_level = 2
 warn_on_root = 1
+
