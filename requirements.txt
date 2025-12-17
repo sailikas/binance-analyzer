@@ -1,4 +1,4 @@
-﻿# Kivy框架
+# Kivy框架
 kivy==2.2.1
 kivymd==1.1.1
 
