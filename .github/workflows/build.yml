@@ -69,9 +69,23 @@ jobs:
     - name: 查找并复制APK
       if: success()
       run: |
+        echo "=== 搜索APK文件 ==="
+        find .buildozer -name "*.apk" -type f
+        echo ""
+        echo "=== 复制APK到bin目录 ==="
         mkdir -p bin
-        find .buildozer/android/platform/build-* -name "*.apk" -exec cp {} bin/ \;
-        ls -lh bin/
+        find .buildozer -name "*.apk" -type f -exec cp -v {} bin/ \;
+        echo ""
+        echo "=== bin目录内容 ==="
+        ls -lh bin/ || echo "bin目录为空"
+        echo ""
+        echo "=== 验证APK文件 ==="
+        if [ -f bin/*.apk ]; then
+          echo "找到APK文件"
+        else
+          echo "警告: 未找到APK文件"
+          exit 1
+        fi
     
     - name: 上传APK
       if: success()
