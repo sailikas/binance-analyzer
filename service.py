@@ -85,7 +85,7 @@ class AnalysisService:
         
         if self.config_manager.get("notify_on_complete", True):
             self._log("[定时分析] 准备发送完成通知...")
-            result = self.notif_manager.notify_analysis_complete(len(results))
+            result = self.notif_manager.notify_analysis_complete(len(results), results)
             self._log(f"[定时分析] 通知发送{'成功' if result else '失败'}")
         
         if last_analysis and self.config_manager.get("notify_on_change", True):

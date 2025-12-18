@@ -19,7 +19,11 @@ class ConfigManager:
             "notify_on_complete": True,
             "auto_start": False,
             "keep_screen_on": False,
-            "wifi_only": True
+            "wifi_only": True,
+            "serverchan_enabled": True,
+            "serverchan_key": "",
+            "serverchan_title": "币安分析完成",
+            "serverchan_content": "找到 {count} 个符合条件的交易对"
         }
         self.config = self.load_config()
     

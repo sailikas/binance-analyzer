@@ -212,7 +212,7 @@ class HomeScreen(Screen):
             Clock.schedule_once(lambda dt: self.show_results(results), 0)
             
             if self.config_manager.get("notify_on_complete", True):
-                self.notif_manager.notify_analysis_complete(len(results))
+                self.notif_manager.notify_analysis_complete(len(results), results)
         except Exception as e:
             error_msg = str(e)
             Clock.schedule_once(lambda dt: self.show_error(error_msg), 0)
@@ -289,46 +289,51 @@ class ResultsScreen(Screen):
             return
         
         for i, r in enumerate(results, 1):
-            # 卡片容器
-            card = BoxLayout(
+            # 外层容器带背景
+            card_wrapper = BoxLayout(
                 orientation="vertical",
                 size_hint_y=None,
-                height=140,
-                padding=[15, 12],
-                spacing=5
+                height=180,
+                padding=0
             )
             
-            # 白色卡片背景
-            from kivy.graphics import Color, Rectangle
-            with card.canvas.before:
+            # 白色圆角背景
+            from kivy.graphics import Color, RoundedRectangle
+            with card_wrapper.canvas.before:
                 Color(*BG_WHITE)
-                card.rect = Rectangle(pos=card.pos, size=card.size)
-            card.bind(pos=lambda obj, val: setattr(obj.rect, "pos", val))
-            card.bind(size=lambda obj, val: setattr(obj.rect, "size", val))
+                card_wrapper.rect = RoundedRectangle(pos=card_wrapper.pos, size=card_wrapper.size, radius=[10])
+            card_wrapper.bind(pos=lambda obj, val: setattr(obj.rect, "pos", val))
+            card_wrapper.bind(size=lambda obj, val: setattr(obj.rect, "size", val))
+            
+            # 内容容器
+            card = BoxLayout(
+                orientation="vertical",
+                padding=[15, 12],
+                spacing=6
+            )
             
             # 顶部: 币种名称和排名
-            top_row = BoxLayout(size_hint_y=None, height=35, spacing=10)
+            top_row = BoxLayout(size_hint_y=None, height=30)
             top_row.add_widget(Label(
                 text=r['symbol'],
-                font_size="18sp",
+                font_size="17sp",
                 bold=True,
                 color=PRIMARY_COLOR
             ))
             top_row.add_widget(Label(
                 text=f"#{i}",
                 size_hint_x=0.2,
-                font_size="15sp",
-                bold=True,
+                font_size="14sp",
                 color=TEXT_SECONDARY
             ))
             card.add_widget(top_row)
             
-            # 涨幅数据 - 三行显示
+            # 涨幅数据
             for period, gain_key in [("1日", "gain_1d"), ("2日", "gain_2d"), ("3日", "gain_3d")]:
                 gain_val = r[gain_key] * 100
                 gain_color = SUCCESS_COLOR if gain_val > 0 else DANGER_COLOR
                 
-                gain_row = BoxLayout(size_hint_y=None, height=35, spacing=5)
+                gain_row = BoxLayout(size_hint_y=None, height=32)
                 gain_row.add_widget(Label(
                     text=period,
                     size_hint_x=0.25,
@@ -337,13 +342,14 @@ class ResultsScreen(Screen):
                 ))
                 gain_row.add_widget(Label(
                     text=f"{gain_val:+.2f}%",
-                    font_size="17sp",
+                    font_size="16sp",
                     bold=True,
                     color=gain_color
                 ))
                 card.add_widget(gain_row)
             
-            self.results_container.add_widget(card)
+            card_wrapper.add_widget(card)
+            self.results_container.add_widget(card_wrapper)
 
 
 class ScheduleScreen(Screen):
@@ -575,36 +581,40 @@ class HistoryScreen(Screen):
             return
         
         for h in history:
-            item = BoxLayout(
+            # 外层wrapper
+            item_wrapper = BoxLayout(
                 orientation="horizontal",
                 size_hint_y=None,
                 height=85,
-                padding=[15, 12],
-                spacing=12
+                padding=0
             )
             
-            from kivy.graphics import Color, Rectangle
-            with item.canvas.before:
+            from kivy.graphics import Color, RoundedRectangle
+            with item_wrapper.canvas.before:
                 Color(*BG_WHITE)
-                item.rect = Rectangle(pos=item.pos, size=item.size)
-            item.bind(pos=lambda obj, val: setattr(obj.rect, "pos", val))
-            item.bind(size=lambda obj, val: setattr(obj.rect, "size", val))
+                item_wrapper.rect = RoundedRectangle(pos=item_wrapper.pos, size=item_wrapper.size, radius=[10])
+            item_wrapper.bind(pos=lambda obj, val: setattr(obj.rect, "pos", val))
+            item_wrapper.bind(size=lambda obj, val: setattr(obj.rect, "size", val))
             
+            # 内容容器
+            item = BoxLayout(padding=[15, 10], spacing=12)
+            
+            # 时间和数量信息
             timestamp = h["timestamp"][:16].replace("T", " ")
-            info_box = BoxLayout(orientation="vertical", spacing=5)
+            info_box = BoxLayout(orientation="vertical", spacing=4)
             info_box.add_widget(Label(
                 text=timestamp,
-                font_size="15sp",
+                font_size="14sp",
                 color=TEXT_PRIMARY,
                 size_hint_y=None,
-                height=25
+                height=28
             ))
             info_box.add_widget(Label(
                 text=f"找到 {h['symbol_count']} 个币种",
-                font_size="14sp",
+                font_size="13sp",
                 color=TEXT_SECONDARY,
                 size_hint_y=None,
-                height=25
+                height=28
             ))
             item.add_widget(info_box)
             
@@ -618,7 +628,8 @@ class HistoryScreen(Screen):
             btn_view.bind(on_press=lambda x, record_id=h["id"]: self.view_record(record_id))
             item.add_widget(btn_view)
             
-            self.history_container.add_widget(item)
+            item_wrapper.add_widget(item)
+            self.history_container.add_widget(item_wrapper)
     
     def view_record(self, record_id):
         record = self.db_manager.get_analysis_by_id(record_id)
@@ -651,6 +662,7 @@ class SettingsScreen(Screen):
         scroll_layout = GridLayout(cols=1, spacing=10, size_hint_y=None, padding=10)
         scroll_layout.bind(minimum_height=scroll_layout.setter("height"))
         
+        # 分析参数分组
         scroll_layout.add_widget(Label(
             text="分析参数",
             size_hint_y=None,
@@ -691,6 +703,92 @@ class SettingsScreen(Screen):
             box.add_widget(input_field)
             scroll_layout.add_widget(box)
         
+        # Server酱设置分组
+        scroll_layout.add_widget(Label(
+            text="Server酱设置",
+            size_hint_y=None,
+            height=40,
+            font_size="16sp",
+            bold=True,
+            color=(0.1, 0.1, 0.1, 1)
+        ))
+        
+        # 启用Server酱开关
+        serverchan_switch_box = BoxLayout(size_hint_y=None, height=50, spacing=10)
+        serverchan_switch_box.add_widget(Label(
+            text="启用Server酱通知",
+            size_hint_x=0.7,
+            font_size="14sp",
+            color=TEXT_PRIMARY,
+            halign="left",
+            valign="middle"
+        ))
+        serverchan_switch = Switch(active=self.config_manager.get("serverchan_enabled", True))
+        serverchan_switch.bind(active=lambda sw, val: self.config_manager.set("serverchan_enabled", val))
+        serverchan_switch_box.add_widget(serverchan_switch)
+        scroll_layout.add_widget(serverchan_switch_box)
+        
+        # SendKey
+        sendkey_box = BoxLayout(size_hint_y=None, height=60, spacing=10)
+        sendkey_box.add_widget(Label(
+            text="SendKey", 
+            size_hint_x=0.35, 
+            font_size="14sp", 
+            color=TEXT_PRIMARY,
+            halign="left",
+            valign="middle"
+        ))
+        sendkey_input = TextInput(
+            text=str(self.config_manager.get("serverchan_key", "")),
+            multiline=False,
+            size_hint_x=0.65,
+            font_size='16sp',
+            hint_text="sctp开头的密钥"
+        )
+        self.inputs["serverchan_key"] = sendkey_input
+        sendkey_box.add_widget(sendkey_input)
+        scroll_layout.add_widget(sendkey_box)
+        
+        # 通知标题
+        scroll_layout.add_widget(Label(
+            text="通知标题模板",
+            size_hint_y=None,
+            height=30,
+            font_size="13sp",
+            color=TEXT_SECONDARY,
+            halign="left"
+        ))
+        title_input = TextInput(
+            text=str(self.config_manager.get("serverchan_title", "币安分析完成")),
+            multiline=False,
+            size_hint_y=None,
+            height=50,
+            font_size='16sp',
+            hint_text="通知标题"
+        )
+        self.inputs["serverchan_title"] = title_input
+        scroll_layout.add_widget(title_input)
+        
+        # 通知正文
+        scroll_layout.add_widget(Label(
+            text="通知正文模板 (支持{count}变量)",
+            size_hint_y=None,
+            height=30,
+            font_size="13sp",
+            color=TEXT_SECONDARY,
+            halign="left"
+        ))
+        content_input = TextInput(
+            text=str(self.config_manager.get("serverchan_content", "找到 {count} 个符合条件的交易对")),
+            multiline=True,
+            size_hint_y=None,
+            height=100,
+            font_size='16sp',
+            hint_text="通知内容,可使用{count}表示币种数量"
+        )
+        self.inputs["serverchan_content"] = content_input
+        scroll_layout.add_widget(content_input)
+        
         scroll.add_widget(scroll_layout)
         layout.add_widget(scroll)
         
@@ -729,7 +827,9 @@ class SettingsScreen(Screen):
         try:
             for key, input_field in self.inputs.items():
                 value_str = input_field.text.strip()
-                if key == "REQUEST_DELAY":
+                if key in ["serverchan_key", "serverchan_title", "serverchan_content"]:
+                    value = value_str
+                elif key == "REQUEST_DELAY":
                     value = float(value_str)
                 elif key == "MIN_CHANGE_PERCENT":
                     value = float(value_str)
