@@ -307,7 +307,7 @@ class ResultsScreen(Screen):
             card.bind(size=lambda obj, val: setattr(obj.rect, "size", val))
             
             # 顶部: 币种名称和排名
-            top_row = BoxLayout(size_hint_y=0.25, spacing=10)
+            top_row = BoxLayout(size_hint_y=None, height=35, spacing=10)
             top_row.add_widget(Label(
                 text=r['symbol'],
                 font_size="18sp",
@@ -323,21 +323,21 @@ class ResultsScreen(Screen):
             ))
             card.add_widget(top_row)
             
-            # 涨幅数据 - 简化为三行显示
+            # 涨幅数据 - 三行显示
             for period, gain_key in [("1日", "gain_1d"), ("2日", "gain_2d"), ("3日", "gain_3d")]:
                 gain_val = r[gain_key] * 100
                 gain_color = SUCCESS_COLOR if gain_val > 0 else DANGER_COLOR
                 
-                gain_row = BoxLayout(size_hint_y=0.25, spacing=5)
+                gain_row = BoxLayout(size_hint_y=None, height=35, spacing=5)
                 gain_row.add_widget(Label(
                     text=period,
-                    size_hint_x=0.2,
-                    font_size="14sp",
+                    size_hint_x=0.25,
+                    font_size="15sp",
                     color=TEXT_REGULAR
                 ))
                 gain_row.add_widget(Label(
                     text=f"{gain_val:+.2f}%",
-                    font_size="16sp",
+                    font_size="17sp",
                     bold=True,
                     color=gain_color
                 ))
@@ -376,30 +376,28 @@ class ScheduleScreen(Screen):
             color=(0.1, 0.1, 0.1, 1)
         ))
         
-        interval_box = BoxLayout(size_hint_y=0.09, spacing=10)
+        interval_box = BoxLayout(size_hint_y=None, height=50, spacing=10)
         current_interval = self.config_manager.get("schedule_interval", 7200)
         minutes = current_interval // 60
         seconds = current_interval % 60
         
-        interval_box.add_widget(Label(text="分钟:", size_hint_x=0.2, color=TEXT_PRIMARY))
+        interval_box.add_widget(Label(text="分钟:", size_hint_x=0.25, color=TEXT_PRIMARY, font_size='15sp'))
         self.minutes_input = TextInput(
             text=str(minutes),
             multiline=False,
             input_filter='int',
-            size_hint_x=0.3,
-            font_size='16sp',
-            padding=[10, 8]
+            size_hint_x=0.25,
+            font_size='18sp'
         )
         interval_box.add_widget(self.minutes_input)
         
-        interval_box.add_widget(Label(text="秒:", size_hint_x=0.2, color=TEXT_PRIMARY))
+        interval_box.add_widget(Label(text="秒:", size_hint_x=0.25, color=TEXT_PRIMARY, font_size='15sp'))
         self.seconds_input = TextInput(
             text=str(seconds),
             multiline=False,
             input_filter='int',
-            size_hint_x=0.3,
-            font_size='16sp',
-            padding=[10, 8]
+            size_hint_x=0.25,
+            font_size='18sp'
         )
         interval_box.add_widget(self.seconds_input)
         layout.add_widget(interval_box)
@@ -580,9 +578,9 @@ class HistoryScreen(Screen):
             item = BoxLayout(
                 orientation="horizontal",
                 size_hint_y=None,
-                height=70,
-                padding=[15, 10],
-                spacing=10
+                height=85,
+                padding=[15, 12],
+                spacing=12
             )
             
             from kivy.graphics import Color, Rectangle
@@ -593,25 +591,27 @@ class HistoryScreen(Screen):
             item.bind(size=lambda obj, val: setattr(obj.rect, "size", val))
             
             timestamp = h["timestamp"][:16].replace("T", " ")
-            info_box = BoxLayout(orientation="vertical", spacing=2)
+            info_box = BoxLayout(orientation="vertical", spacing=5)
             info_box.add_widget(Label(
                 text=timestamp,
-                font_size="14sp",
+                font_size="15sp",
                 color=TEXT_PRIMARY,
-                size_hint_y=0.5
+                size_hint_y=None,
+                height=25
             ))
             info_box.add_widget(Label(
                 text=f"找到 {h['symbol_count']} 个币种",
-                font_size="13sp",
+                font_size="14sp",
                 color=TEXT_SECONDARY,
-                size_hint_y=0.5
+                size_hint_y=None,
+                height=25
             ))
             item.add_widget(info_box)
             
             btn_view = create_rounded_button(
                 text="查看",
                 bg_color=PRIMARY_COLOR,
-                size_hint_x=0.22,
+                size_hint_x=0.25,
                 font_size="15sp",
                 bold=True
             )
@@ -671,15 +671,21 @@ class SettingsScreen(Screen):
         ]
         
         for key, label, default in params:
-            box = BoxLayout(size_hint_y=None, height=70, spacing=10, padding=[0, 5])
-            box.add_widget(Label(text=label, size_hint_x=0.5, font_size="15sp", color=TEXT_PRIMARY))
+            box = BoxLayout(size_hint_y=None, height=60, spacing=10)
+            box.add_widget(Label(
+                text=label, 
+                size_hint_x=0.5, 
+                font_size="14sp", 
+                color=TEXT_PRIMARY,
+                halign="left",
+                valign="middle"
+            ))
             
             input_field = TextInput(
                 text=str(self.config_manager.get(key, default)),
                 multiline=False,
                 size_hint_x=0.5,
-                font_size="15sp",
-                padding=[10, 12, 10, 12]
+                font_size='18sp'
             )
             self.inputs[key] = input_field
             box.add_widget(input_field)
@@ -860,6 +866,9 @@ class BinanceAnalyzerApp(App):
         return MainContainer()
     
     def on_start(self):
+        # Android运行时权限检查和请求
+        self.request_android_permissions()
+        
         # 获取主页实例并设置定时服务日志回调
         home_screen = self.root.screen_manager.get_screen("home")
         service = get_service()
@@ -868,6 +877,48 @@ class BinanceAnalyzerApp(App):
         config_manager = ConfigManager()
         if config_manager.get("schedule_enabled", False):
             service.start_service()
+    
+    def request_android_permissions(self):
+        """检查并请求Android权限"""
+        try:
+            from android.permissions import request_permissions, check_permission, Permission
+            
+            # 定义所需权限列表
+            required_permissions = [
+                Permission.POST_NOTIFICATIONS,
+                Permission.INTERNET,
+                Permission.WRITE_EXTERNAL_STORAGE,
+                Permission.READ_EXTERNAL_STORAGE,
+                Permission.WAKE_LOCK,
+                Permission.FOREGROUND_SERVICE,
+                Permission.SCHEDULE_EXACT_ALARM,
+                Permission.ACCESS_NETWORK_STATE
+            ]
+            
+            # 检查哪些权限未授予
+            permissions_to_request = []
+            for perm in required_permissions:
+                try:
+                    if not check_permission(perm):
+                        permissions_to_request.append(perm)
+                        print(f"[权限] 需要申请: {perm}")
+                except:
+                    permissions_to_request.append(perm)
+            
+            # 请求未授予的权限
+            if permissions_to_request:
+                print(f"[权限] 正在申请 {len(permissions_to_request)} 个权限...")
+                request_permissions(permissions_to_request)
+                print("[权限] 权限申请对话框已显示")
+            else:
+                print("[权限] 所有权限已授予")
+                
+        except ImportError:
+            print("[权限] 非Android平台,跳过权限检查")
+        except Exception as e:
+            print(f"[权限] 权限检查失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     def on_stop(self):
         service = get_service()

@@ -84,7 +84,9 @@ class AnalysisService:
         self.db_manager.save_analysis(results, analyzer_config)
         
         if self.config_manager.get("notify_on_complete", True):
-            self.notif_manager.notify_analysis_complete(len(results))
+            self._log("[定时分析] 准备发送完成通知...")
+            result = self.notif_manager.notify_analysis_complete(len(results))
+            self._log(f"[定时分析] 通知发送{'成功' if result else '失败'}")
         
         if last_analysis and self.config_manager.get("notify_on_change", True):
             comparison = self.db_manager.compare_results(
