@@ -84,7 +84,7 @@ class HomeScreen(Screen):
             background_color=(0.5, 0.5, 0.5, 1),
             font_size="18sp"
         )
-        btn_settings.bind(on_press=lambda x: self.manager.current = "settings")
+        btn_settings.bind(on_press=lambda x: setattr(self.manager, "current", "settings"))
         layout.add_widget(btn_settings)
         
         self.bottom_status = Label(
