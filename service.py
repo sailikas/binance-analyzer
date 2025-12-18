@@ -38,27 +38,47 @@ class AnalysisService:
         return True
     
     def _service_loop(self):
+        import datetime
+        self._log("[定时服务] 已启动")
+        
         while self.is_running:
-            if self.config_manager.get("schedule_enabled", False):
+            schedule_enabled = self.config_manager.get("schedule_enabled", False)
+            
+            if schedule_enabled:
                 try:
+                    self._log("[定时分析] 开始执行...")
                     self._run_analysis()
+                    self._log("[定时分析] 执行完成")
                 except Exception as e:
-                    print(f"定时分析出错: {e}")
+                    self._log(f"[定时分析] 出错: {str(e)[:50]}")
+                    import traceback
+                    traceback.print_exc()
                     if self.config_manager.get("notify_on_complete", True):
                         self.notif_manager.notify_error(str(e))
             
             interval = self.config_manager.get("schedule_interval", 7200)
-            for _ in range(interval):
+            
+            for i in range(interval):
                 if not self.is_running:
+                    self._log("[定时服务] 已停止")
                     break
                 time.sleep(1)
     
+    def _log(self, message):
+        """发送日志到回调函数"""
+        print(message)
+        if hasattr(self, 'log_callback') and self.log_callback:
+            try:
+                self.log_callback(message)
+            except:
+                pass
+    
     def _run_analysis(self):
-        print("开始定时分析...")
-        
         analyzer_config = self.config_manager.get_analyzer_config()
         analyzer = BinanceAnalyzer(config=analyzer_config)
+        
         results = analyzer.analyze()
+        self._log(f"[定时分析] 找到 {len(results)} 个币种")
         
         last_analysis = self.db_manager.get_latest_analysis()
         self.db_manager.save_analysis(results, analyzer_config)
@@ -73,12 +93,12 @@ class AnalysisService:
             )
             
             if comparison["has_changes"]:
+                self._log(f"[定时分析] 检测到变化: +{len(comparison['new'])} -{len(comparison['removed'])}")
                 self.notif_manager.notify_changes_detected(
                     len(comparison["new"]),
                     len(comparison["removed"])
                 )
         
-        print(f"定时分析完成，找到 {len(results)} 个符合条件的币种")
         return results
 
 service_instance = None
