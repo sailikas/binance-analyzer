@@ -14,8 +14,18 @@ from kivy.uix.progressbar import ProgressBar
 from kivy.uix.spinner import Spinner
 from kivy.clock import Clock, mainthread
 from kivy.core.window import Window
+from kivy.core.text import LabelBase
 from threading import Thread
 import traceback
+import os
+
+# 注册中文字体
+if os.name == 'nt':  # Windows
+    LabelBase.register(name='Roboto', 
+                      fn_regular='C:\\Windows\\Fonts\\msyh.ttc')  # 微软雅黑
+else:  # Android
+    LabelBase.register(name='Roboto',
+                      fn_regular='/system/fonts/DroidSansFallback.ttf')
 
 from analysis_core import BinanceAnalyzer
 from database import DatabaseManager
@@ -88,7 +98,7 @@ class HomeScreen(Screen):
         layout.add_widget(btn_settings)
         
         self.bottom_status = Label(
-            text="状态: 待机中 ✓",
+            text="状态: 待机中",
             size_hint_y=0.08,
             font_size="14sp",
             color=(0.2, 0.7, 0.2, 1)
@@ -135,7 +145,7 @@ class HomeScreen(Screen):
     
     @mainthread
     def show_results(self, results):
-        self.bottom_status.text = "状态: 分析完成 ✓"
+        self.bottom_status.text = "状态: 分析完成"
         self.bottom_status.color = (0.2, 0.7, 0.2, 1)
         self.update_status()
         
@@ -255,39 +265,65 @@ class ScheduleScreen(Screen):
             text="定时任务设置",
             size_hint_y=0.08,
             font_size="20sp",
-            bold=True
+            bold=True,
+            color=(0.1, 0.1, 0.1, 1)
         ))
         
         switch_box = BoxLayout(size_hint_y=0.08)
-        switch_box.add_widget(Label(text="启用定时分析", font_size="16sp"))
+        switch_box.add_widget(Label(text="启用定时分析", font_size="16sp", color=(0.1, 0.1, 0.1, 1)))
         self.schedule_switch = Switch(active=self.config_manager.get("schedule_enabled", False))
         self.schedule_switch.bind(active=self.toggle_schedule)
         switch_box.add_widget(self.schedule_switch)
         layout.add_widget(switch_box)
         
         layout.add_widget(Label(
-            text="运行间隔",
+            text="运行间隔（分钟）",
             size_hint_y=0.06,
-            font_size="16sp"
+            font_size="16sp",
+            color=(0.1, 0.1, 0.1, 1)
         ))
         
-        self.interval_spinner = Spinner(
-            text=self._get_interval_text(),
-            values=["每小时", "每2小时", "每4小时", "每6小时", "每12小时", "每天"],
-            size_hint_y=0.08
+        interval_box = BoxLayout(size_hint_y=0.08, spacing=10)
+        current_interval = self.config_manager.get("schedule_interval", 7200)
+        minutes = current_interval // 60
+        seconds = current_interval % 60
+        
+        interval_box.add_widget(Label(text="分钟:", size_hint_x=0.2, color=(0.1, 0.1, 0.1, 1)))
+        self.minutes_input = TextInput(
+            text=str(minutes),
+            multiline=False,
+            input_filter='int',
+            size_hint_x=0.3
         )
-        self.interval_spinner.bind(text=self.change_interval)
-        layout.add_widget(self.interval_spinner)
+        interval_box.add_widget(self.minutes_input)
+        
+        interval_box.add_widget(Label(text="秒:", size_hint_x=0.2, color=(0.1, 0.1, 0.1, 1)))
+        self.seconds_input = TextInput(
+            text=str(seconds),
+            multiline=False,
+            input_filter='int',
+            size_hint_x=0.3
+        )
+        interval_box.add_widget(self.seconds_input)
+        layout.add_widget(interval_box)
+        
+        btn_save_interval = Button(
+            text="保存间隔",
+            size_hint_y=0.08,
+            background_color=(0.2, 0.6, 0.8, 1)
+        )
+        btn_save_interval.bind(on_press=self.save_interval)
+        layout.add_widget(btn_save_interval)
         
         notify_box1 = BoxLayout(size_hint_y=0.08)
-        notify_box1.add_widget(Label(text="发现变化时通知", font_size="14sp"))
+        notify_box1.add_widget(Label(text="发现变化时通知", font_size="14sp", color=(0.1, 0.1, 0.1, 1)))
         self.notify_change_switch = Switch(active=self.config_manager.get("notify_on_change", True))
         self.notify_change_switch.bind(active=lambda sw, val: self.config_manager.set("notify_on_change", val))
         notify_box1.add_widget(self.notify_change_switch)
         layout.add_widget(notify_box1)
         
         notify_box2 = BoxLayout(size_hint_y=0.08)
-        notify_box2.add_widget(Label(text="分析完成后通知", font_size="14sp"))
+        notify_box2.add_widget(Label(text="分析完成后通知", font_size="14sp", color=(0.1, 0.1, 0.1, 1)))
         self.notify_complete_switch = Switch(active=self.config_manager.get("notify_on_complete", True))
         self.notify_complete_switch.bind(active=lambda sw, val: self.config_manager.set("notify_on_complete", val))
         notify_box2.add_widget(self.notify_complete_switch)
@@ -296,7 +332,8 @@ class ScheduleScreen(Screen):
         self.next_run_label = Label(
             text=self._get_next_run_text(),
             size_hint_y=0.08,
-            font_size="14sp"
+            font_size="14sp",
+            color=(0.1, 0.1, 0.1, 1)
         )
         layout.add_widget(self.next_run_label)
         
@@ -304,16 +341,31 @@ class ScheduleScreen(Screen):
         
         self.add_widget(layout)
     
-    def _get_interval_text(self):
-        interval = self.config_manager.get("schedule_interval", 7200)
-        mapping = {3600: "每小时", 7200: "每2小时", 14400: "每4小时", 
-                   21600: "每6小时", 43200: "每12小时", 86400: "每天"}
-        return mapping.get(interval, "每2小时")
-    
     def _get_next_run_text(self):
         if self.config_manager.get("schedule_enabled", False):
-            return "下次运行: 已启用定时任务"
+            interval = self.config_manager.get("schedule_interval", 7200)
+            minutes = interval // 60
+            seconds = interval % 60
+            return f"下次运行: 已启用 (间隔 {minutes}分{seconds}秒)"
         return "下次运行: 未启用"
+    
+    def save_interval(self, instance):
+        try:
+            minutes = int(self.minutes_input.text or "0")
+            seconds = int(self.seconds_input.text or "0")
+            total_seconds = minutes * 60 + seconds
+            
+            if total_seconds < 10:
+                self.next_run_label.text = "错误: 间隔不能少于10秒"
+                self.next_run_label.color = (0.8, 0.2, 0.2, 1)
+                return
+            
+            self.config_manager.set("schedule_interval", total_seconds)
+            self.next_run_label.text = f"已保存: 间隔 {minutes}分{seconds}秒"
+            self.next_run_label.color = (0.2, 0.7, 0.2, 1)
+        except ValueError:
+            self.next_run_label.text = "错误: 请输入有效数字"
+            self.next_run_label.color = (0.8, 0.2, 0.2, 1)
     
     def toggle_schedule(self, switch, value):
         self.config_manager.set("schedule_enabled", value)
@@ -322,12 +374,7 @@ class ScheduleScreen(Screen):
         else:
             self.service.stop_service()
         self.next_run_label.text = self._get_next_run_text()
-    
-    def change_interval(self, spinner, text):
-        mapping = {"每小时": 3600, "每2小时": 7200, "每4小时": 14400,
-                   "每6小时": 21600, "每12小时": 43200, "每天": 86400}
-        interval = mapping.get(text, 7200)
-        self.config_manager.set("schedule_interval", interval)
+        self.next_run_label.color = (0.1, 0.1, 0.1, 1)
 
 
 class HistoryScreen(Screen):
@@ -443,11 +490,12 @@ class SettingsScreen(Screen):
         scroll_layout.bind(minimum_height=scroll_layout.setter("height"))
         
         scroll_layout.add_widget(Label(
-            text="📊 分析参数",
+            text="分析参数",
             size_hint_y=None,
             height=30,
             font_size="16sp",
-            bold=True
+            bold=True,
+            color=(0.1, 0.1, 0.1, 1)
         ))
         
         self.inputs = {}
@@ -462,7 +510,7 @@ class SettingsScreen(Screen):
         
         for key, label, default in params:
             box = BoxLayout(size_hint_y=None, height=60, spacing=10)
-            box.add_widget(Label(text=label, size_hint_x=0.5, font_size="14sp"))
+            box.add_widget(Label(text=label, size_hint_x=0.5, font_size="14sp", color=(0.1, 0.1, 0.1, 1)))
             
             input_field = TextInput(
                 text=str(self.config_manager.get(key, default)),
@@ -518,7 +566,7 @@ class SettingsScreen(Screen):
             self.status_label.text = "✓ 设置已保存"
             self.status_label.color = (0.2, 0.7, 0.2, 1)
         except ValueError as e:
-            self.status_label.text = "✗ 输入格式错误"
+            self.status_label.text = "输入格式错误"
             self.status_label.color = (0.8, 0.2, 0.2, 1)
     
     def reset_settings(self, instance):
