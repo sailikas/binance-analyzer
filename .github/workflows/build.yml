@@ -80,10 +80,11 @@ jobs:
         ls -lh bin/ || echo "bin目录为空"
         echo ""
         echo "=== 验证APK文件 ==="
-        if [ -f bin/*.apk ]; then
-          echo "找到APK文件"
+        APK_COUNT=$(ls -1 bin/*.apk 2>/dev/null | wc -l)
+        if [ "$APK_COUNT" -gt 0 ]; then
+          echo "✓ 找到 $APK_COUNT 个APK文件"
         else
-          echo "警告: 未找到APK文件"
+          echo "✗ 未找到APK文件"
           exit 1
         fi
     

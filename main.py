@@ -18,20 +18,38 @@ from kivy.core.text import LabelBase
 from threading import Thread
 import traceback
 import os
+import sys
 
 # 注册中文字体
-if os.name == 'nt':  # Windows
-    LabelBase.register(name='Roboto', 
-                      fn_regular='C:\\Windows\\Fonts\\msyh.ttc')  # 微软雅黑
-else:  # Android
-    LabelBase.register(name='Roboto',
-                      fn_regular='/system/fonts/DroidSansFallback.ttf')
+try:
+    if os.name == 'nt':  # Windows
+        LabelBase.register(name='Roboto', 
+                          fn_regular='C:\\Windows\\Fonts\\msyh.ttc')
+    else:  # Android/Linux
+        # 尝试多个可能的字体路径
+        font_paths = [
+            '/system/fonts/DroidSansFallback.ttf',
+            '/system/fonts/NotoSansCJK-Regular.ttc',
+            '/system/fonts/DroidSans.ttf'
+        ]
+        for font_path in font_paths:
+            if os.path.exists(font_path):
+                LabelBase.register(name='Roboto', fn_regular=font_path)
+                break
+except Exception as e:
+    print(f"字体注册失败: {e}")
 
-from analysis_core import BinanceAnalyzer
-from database import DatabaseManager
-from notification_manager import NotificationManager
-from config_manager import ConfigManager
-from service import get_service
+# 导入项目模块
+try:
+    from analysis_core import BinanceAnalyzer
+    from database import DatabaseManager
+    from notification_manager import NotificationManager
+    from config_manager import ConfigManager
+    from service import get_service
+except Exception as e:
+    print(f"模块导入失败: {e}")
+    traceback.print_exc()
+    sys.exit(1)
 
 Window.clearcolor = (0.95, 0.95, 0.95, 1)
 
