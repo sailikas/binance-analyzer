@@ -15,7 +15,12 @@ android.minapi = 21
 android.ndk = 25b
 android.skip_update = False
 android.accept_sdk_license = True
-android.presplash_color = #FFFFFF
+
+# 应用图标和开屏动画
+icon.filename = %(source.dir)s/icon.png
+presplash.filename = %(source.dir)s/presplash.png
+android.presplash_color = #66B5FC
+
 orientation = portrait
 fullscreen = 0
 android.entrypoint = org.kivy.android.PythonActivity

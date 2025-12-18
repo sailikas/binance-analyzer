@@ -13,21 +13,50 @@ class NotificationManager:
         self.app_name = "币安分析工具"
     
     def send_notification(self, title, message, timeout=10):
+        print(f"[通知] 准备发送: {title} - {message}")
+        
         if not PLYER_AVAILABLE:
-            print(f"[通知] {title}: {message}")
+            print(f"[通知] plyer不可用,仅打印日志")
             return False
         
         try:
+            # 尝试使用plyer发送通知
             notification.notify(
                 title=title,
                 message=message,
                 app_name=self.app_name,
                 timeout=timeout
             )
+            print(f"[通知] 发送成功")
             return True
         except Exception as e:
-            print(f"发送通知失败: {e}")
-            return False
+            print(f"[通知] plyer发送失败: {e}")
+            
+            # 尝试Android原生通知
+            try:
+                from android.runnable import run_on_ui_thread
+                from jnius import autoclass, cast
+                
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                NotificationBuilder = autoclass('android.app.Notification$Builder')
+                NotificationManager = autoclass('android.app.NotificationManager')
+                Context = autoclass('android.content.Context')
+                
+                activity = PythonActivity.mActivity
+                notification_service = cast(NotificationManager, 
+                    activity.getSystemService(Context.NOTIFICATION_SERVICE))
+                
+                builder = NotificationBuilder(activity)
+                builder.setContentTitle(title)
+                builder.setContentText(message)
+                builder.setSmallIcon(activity.getApplicationInfo().icon)
+                
+                notification_service.notify(1, builder.build())
+                print(f"[通知] Android原生通知发送成功")
+                return True
+            except Exception as e2:
+                print(f"[通知] Android原生通知也失败: {e2}")
+                return False
     
     def notify_analysis_complete(self, symbol_count):
         title = "分析完成"
