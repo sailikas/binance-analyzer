@@ -15,6 +15,7 @@ from kivy.uix.spinner import Spinner
 from kivy.clock import Clock, mainthread
 from kivy.core.window import Window
 from kivy.core.text import LabelBase
+from kivy.metrics import dp, sp
 from threading import Thread
 import traceback
 import os
@@ -89,7 +90,7 @@ def create_rounded_button(text, bg_color, **kwargs):
     # 添加圆角矩形背景
     with btn.canvas.before:
         Color(*bg_color)
-        btn.bg_rect = RoundedRectangle(pos=btn.pos, size=btn.size, radius=[10])
+        btn.bg_rect = RoundedRectangle(pos=btn.pos, size=btn.size, radius=[dp(10)])
     
     btn.bind(pos=lambda obj, val: setattr(obj.bg_rect, "pos", val))
     btn.bind(size=lambda obj, val: setattr(obj.bg_rect, "size", val))
@@ -104,7 +105,7 @@ class HomeScreen(Screen):
         self.db_manager = DatabaseManager()
         self.notif_manager = NotificationManager()
         
-        layout = BoxLayout(orientation="vertical", padding=[20, 15, 20, 15], spacing=12)
+        layout = BoxLayout(orientation="vertical", padding=[dp(20), dp(15), dp(20), dp(15)], spacing=dp(12))
         
         # 顶部标题
         layout.add_widget(Label(
@@ -136,7 +137,7 @@ class HomeScreen(Screen):
         layout.add_widget(self.status_label)
         
         # 日志区域标题和清空按钮
-        log_header = BoxLayout(size_hint_y=0.06, spacing=10)
+        log_header = BoxLayout(size_hint_y=0.06, spacing=dp(10))
         log_header.add_widget(Label(
             text="运行日志",
             font_size="15sp",
@@ -155,7 +156,7 @@ class HomeScreen(Screen):
         
         # 滚动日志区域
         scroll = ScrollView(size_hint=(1, 0.65))
-        self.log_container = GridLayout(cols=1, spacing=5, size_hint_y=None, padding=[8, 5])
+        self.log_container = GridLayout(cols=1, spacing=dp(5), size_hint_y=None, padding=[dp(8), dp(5)])
         self.log_container.bind(minimum_height=self.log_container.setter("height"))
         scroll.add_widget(self.log_container)
         layout.add_widget(scroll)
@@ -172,7 +173,7 @@ class HomeScreen(Screen):
         log_label = Label(
             text=f"[{timestamp}] {message}",
             size_hint_y=None,
-            height=40,
+            height=dp(48),
             font_size="14sp",
             color=TEXT_REGULAR,
             halign="left",
@@ -244,10 +245,10 @@ class HomeScreen(Screen):
 class ResultsScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.layout = BoxLayout(orientation="vertical", padding=[15, 10, 15, 10], spacing=10)
+        self.layout = BoxLayout(orientation="vertical", padding=[dp(15), dp(10), dp(15), dp(10)], spacing=dp(10))
         
         # 顶部栏:返回按钮+标题
-        top_bar = BoxLayout(size_hint_y=0.08, spacing=10)
+        top_bar = BoxLayout(size_hint_y=0.08, spacing=dp(10))
         btn_back = create_rounded_button(
             text="← 返回",
             bg_color=INFO_COLOR,
@@ -267,7 +268,7 @@ class ResultsScreen(Screen):
         self.layout.add_widget(top_bar)
         
         self.scroll_view = ScrollView(size_hint=(1, 0.92))
-        self.results_container = GridLayout(cols=1, spacing=12, size_hint_y=None, padding=[0, 5])
+        self.results_container = GridLayout(cols=1, spacing=dp(12), size_hint_y=None, padding=[0, dp(5)])
         self.results_container.bind(minimum_height=self.results_container.setter("height"))
         self.scroll_view.add_widget(self.results_container)
         self.layout.add_widget(self.scroll_view)
@@ -282,7 +283,7 @@ class ResultsScreen(Screen):
             self.results_container.add_widget(Label(
                 text="未找到符合条件的交易对",
                 size_hint_y=None,
-                height=80,
+                height=dp(96),
                 font_size="15sp",
                 color=TEXT_SECONDARY
             ))
@@ -293,7 +294,7 @@ class ResultsScreen(Screen):
             card_wrapper = BoxLayout(
                 orientation="vertical",
                 size_hint_y=None,
-                height=180,
+                height=dp(220),
                 padding=0
             )
             
@@ -301,19 +302,19 @@ class ResultsScreen(Screen):
             from kivy.graphics import Color, RoundedRectangle
             with card_wrapper.canvas.before:
                 Color(*BG_WHITE)
-                card_wrapper.rect = RoundedRectangle(pos=card_wrapper.pos, size=card_wrapper.size, radius=[10])
+                card_wrapper.rect = RoundedRectangle(pos=card_wrapper.pos, size=card_wrapper.size, radius=[dp(10)])
             card_wrapper.bind(pos=lambda obj, val: setattr(obj.rect, "pos", val))
             card_wrapper.bind(size=lambda obj, val: setattr(obj.rect, "size", val))
             
             # 内容容器
             card = BoxLayout(
                 orientation="vertical",
-                padding=[15, 12],
-                spacing=6
+                padding=[dp(15), dp(12)],
+                spacing=dp(6)
             )
             
             # 顶部: 币种名称和排名
-            top_row = BoxLayout(size_hint_y=None, height=30)
+            top_row = BoxLayout(size_hint_y=None, height=dp(36))
             top_row.add_widget(Label(
                 text=r['symbol'],
                 font_size="17sp",
@@ -333,7 +334,7 @@ class ResultsScreen(Screen):
                 gain_val = r[gain_key] * 100
                 gain_color = SUCCESS_COLOR if gain_val > 0 else DANGER_COLOR
                 
-                gain_row = BoxLayout(size_hint_y=None, height=32)
+                gain_row = BoxLayout(size_hint_y=None, height=dp(38))
                 gain_row.add_widget(Label(
                     text=period,
                     size_hint_x=0.25,
@@ -358,7 +359,7 @@ class ScheduleScreen(Screen):
         self.config_manager = ConfigManager()
         self.service = get_service()
         
-        layout = BoxLayout(orientation="vertical", padding=25, spacing=18)
+        layout = BoxLayout(orientation="vertical", padding=dp(25), spacing=dp(18))
         
         layout.add_widget(Label(
             text="定时任务设置",
@@ -382,7 +383,7 @@ class ScheduleScreen(Screen):
             color=(0.1, 0.1, 0.1, 1)
         ))
         
-        interval_box = BoxLayout(size_hint_y=None, height=50, spacing=10)
+        interval_box = BoxLayout(size_hint_y=None, height=dp(60), spacing=dp(10))
         current_interval = self.config_manager.get("schedule_interval", 7200)
         minutes = current_interval // 60
         seconds = current_interval % 60
@@ -491,7 +492,7 @@ class HistoryScreen(Screen):
         self.db_manager = DatabaseManager()
         self.current_filter = 2  # 默认近2天
         
-        layout = BoxLayout(orientation="vertical", padding=[15, 10, 15, 10], spacing=10)
+        layout = BoxLayout(orientation="vertical", padding=[dp(15), dp(10), dp(15), dp(10)], spacing=dp(10))
         
         # 标题
         layout.add_widget(Label(
@@ -503,7 +504,7 @@ class HistoryScreen(Screen):
         ))
         
         # 筛选按钮行
-        filter_box = BoxLayout(size_hint_y=0.08, spacing=8)
+        filter_box = BoxLayout(size_hint_y=0.08, spacing=dp(8))
         self.filter_buttons = {}
         
         for days, label in [(2, "近2天"), (7, "近7天"), (30, "近30天"), (0, "全部")]:
@@ -531,7 +532,7 @@ class HistoryScreen(Screen):
         
         # 列表
         self.scroll_view = ScrollView(size_hint=(1, 0.82))
-        self.history_container = GridLayout(cols=1, spacing=12, size_hint_y=None, padding=[0, 5])
+        self.history_container = GridLayout(cols=1, spacing=dp(12), size_hint_y=None, padding=[0, dp(5)])
         self.history_container.bind(minimum_height=self.history_container.setter("height"))
         self.scroll_view.add_widget(self.history_container)
         layout.add_widget(self.scroll_view)
@@ -575,7 +576,7 @@ class HistoryScreen(Screen):
             self.history_container.add_widget(Label(
                 text="暂无历史记录",
                 size_hint_y=None,
-                height=60,
+                height=dp(72),
                 color=TEXT_SECONDARY
             ))
             return
@@ -585,36 +586,36 @@ class HistoryScreen(Screen):
             item_wrapper = BoxLayout(
                 orientation="horizontal",
                 size_hint_y=None,
-                height=85,
+                height=dp(100),
                 padding=0
             )
             
             from kivy.graphics import Color, RoundedRectangle
             with item_wrapper.canvas.before:
                 Color(*BG_WHITE)
-                item_wrapper.rect = RoundedRectangle(pos=item_wrapper.pos, size=item_wrapper.size, radius=[10])
+                item_wrapper.rect = RoundedRectangle(pos=item_wrapper.pos, size=item_wrapper.size, radius=[dp(10)])
             item_wrapper.bind(pos=lambda obj, val: setattr(obj.rect, "pos", val))
             item_wrapper.bind(size=lambda obj, val: setattr(obj.rect, "size", val))
             
             # 内容容器
-            item = BoxLayout(padding=[15, 10], spacing=12)
+            item = BoxLayout(padding=[dp(15), dp(10)], spacing=dp(12))
             
             # 时间和数量信息
             timestamp = h["timestamp"][:16].replace("T", " ")
-            info_box = BoxLayout(orientation="vertical", spacing=4)
+            info_box = BoxLayout(orientation="vertical", spacing=dp(4))
             info_box.add_widget(Label(
                 text=timestamp,
                 font_size="14sp",
                 color=TEXT_PRIMARY,
                 size_hint_y=None,
-                height=28
+                height=dp(32)
             ))
             info_box.add_widget(Label(
                 text=f"找到 {h['symbol_count']} 个币种",
                 font_size="13sp",
                 color=TEXT_SECONDARY,
                 size_hint_y=None,
-                height=28
+                height=dp(32)
             ))
             item.add_widget(info_box)
             
@@ -648,7 +649,7 @@ class SettingsScreen(Screen):
         super().__init__(**kwargs)
         self.config_manager = ConfigManager()
         
-        layout = BoxLayout(orientation="vertical", padding=25, spacing=15)
+        layout = BoxLayout(orientation="vertical", padding=dp(25), spacing=dp(15))
         
         layout.add_widget(Label(
             text="设置",
@@ -659,14 +660,14 @@ class SettingsScreen(Screen):
         ))
         
         scroll = ScrollView(size_hint=(1, 0.75))
-        scroll_layout = GridLayout(cols=1, spacing=10, size_hint_y=None, padding=10)
+        scroll_layout = GridLayout(cols=1, spacing=dp(10), size_hint_y=None, padding=dp(10))
         scroll_layout.bind(minimum_height=scroll_layout.setter("height"))
         
         # 分析参数分组
         scroll_layout.add_widget(Label(
             text="分析参数",
             size_hint_y=None,
-            height=30,
+            height=dp(36),
             font_size="16sp",
             bold=True,
             color=(0.1, 0.1, 0.1, 1)
@@ -683,7 +684,7 @@ class SettingsScreen(Screen):
         ]
         
         for key, label, default in params:
-            box = BoxLayout(size_hint_y=None, height=60, spacing=10)
+            box = BoxLayout(size_hint_y=None, height=dp(70), spacing=dp(10))
             box.add_widget(Label(
                 text=label, 
                 size_hint_x=0.5, 
@@ -707,14 +708,14 @@ class SettingsScreen(Screen):
         scroll_layout.add_widget(Label(
             text="Server酱设置",
             size_hint_y=None,
-            height=40,
+            height=dp(48),
             font_size="16sp",
             bold=True,
             color=(0.1, 0.1, 0.1, 1)
         ))
         
         # 启用Server酱开关
-        serverchan_switch_box = BoxLayout(size_hint_y=None, height=50, spacing=10)
+        serverchan_switch_box = BoxLayout(size_hint_y=None, height=dp(60), spacing=dp(10))
         serverchan_switch_box.add_widget(Label(
             text="启用Server酱通知",
             size_hint_x=0.7,
@@ -729,7 +730,7 @@ class SettingsScreen(Screen):
         scroll_layout.add_widget(serverchan_switch_box)
         
         # SendKey
-        sendkey_box = BoxLayout(size_hint_y=None, height=60, spacing=10)
+        sendkey_box = BoxLayout(size_hint_y=None, height=dp(70), spacing=dp(10))
         sendkey_box.add_widget(Label(
             text="SendKey", 
             size_hint_x=0.35, 
@@ -753,7 +754,7 @@ class SettingsScreen(Screen):
         scroll_layout.add_widget(Label(
             text="通知标题模板",
             size_hint_y=None,
-            height=30,
+            height=dp(36),
             font_size="13sp",
             color=TEXT_SECONDARY,
             halign="left"
@@ -762,7 +763,7 @@ class SettingsScreen(Screen):
             text=str(self.config_manager.get("serverchan_title", "币安分析完成")),
             multiline=False,
             size_hint_y=None,
-            height=50,
+            height=dp(60),
             font_size='16sp',
             hint_text="通知标题"
         )
@@ -773,7 +774,7 @@ class SettingsScreen(Screen):
         scroll_layout.add_widget(Label(
             text="通知正文模板 (支持{count}变量)",
             size_hint_y=None,
-            height=30,
+            height=dp(36),
             font_size="13sp",
             color=TEXT_SECONDARY,
             halign="left"
@@ -782,7 +783,7 @@ class SettingsScreen(Screen):
             text=str(self.config_manager.get("serverchan_content", "找到 {count} 个符合条件的交易对")),
             multiline=True,
             size_hint_y=None,
-            height=100,
+            height=dp(120),
             font_size='16sp',
             hint_text="通知内容,可使用{count}表示币种数量"
         )
@@ -792,7 +793,7 @@ class SettingsScreen(Screen):
         scroll.add_widget(scroll_layout)
         layout.add_widget(scroll)
         
-        btn_box = BoxLayout(size_hint_y=0.10, spacing=15, padding=[10, 0])
+        btn_box = BoxLayout(size_hint_y=0.10, spacing=dp(15), padding=[dp(10), 0])
         
         btn_save = create_rounded_button(
             text="保存设置",
@@ -857,7 +858,7 @@ class BottomNavBar(BoxLayout):
         super().__init__(**kwargs)
         self.orientation = "horizontal"
         self.size_hint_y = 0.11
-        self.padding = [0, 8, 0, 8]
+        self.padding = [0, dp(8), 0, dp(8)]
         self.spacing = 0
         self.screen_manager = screen_manager
         
@@ -880,7 +881,7 @@ class BottomNavBar(BoxLayout):
         
         for screen_name, label, icon in nav_items:
             # 创建垂直布局容器
-            container = BoxLayout(orientation="vertical", padding=[5, 5])
+            container = BoxLayout(orientation="vertical", padding=[dp(5), dp(5)])
             
             # 图标标签
             icon_label = Label(
