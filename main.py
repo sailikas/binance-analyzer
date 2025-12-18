@@ -135,18 +135,27 @@ class HomeScreen(Screen):
         )
         layout.add_widget(self.status_label)
         
-        # 日志区域标题
-        layout.add_widget(Label(
+        # 日志区域标题和清空按钮
+        log_header = BoxLayout(size_hint_y=0.06, spacing=10)
+        log_header.add_widget(Label(
             text="运行日志",
-            size_hint_y=0.05,
             font_size="15sp",
             bold=True,
             color=TEXT_PRIMARY
         ))
+        btn_clear = create_rounded_button(
+            text="清空",
+            bg_color=INFO_COLOR,
+            size_hint_x=0.2,
+            font_size="14sp"
+        )
+        btn_clear.bind(on_press=lambda x: self.clear_logs())
+        log_header.add_widget(btn_clear)
+        layout.add_widget(log_header)
         
         # 滚动日志区域
-        scroll = ScrollView(size_hint=(1, 0.71))
-        self.log_container = GridLayout(cols=1, spacing=8, size_hint_y=None, padding=[12, 12])
+        scroll = ScrollView(size_hint=(1, 0.65))
+        self.log_container = GridLayout(cols=1, spacing=5, size_hint_y=None, padding=[8, 5])
         self.log_container.bind(minimum_height=self.log_container.setter("height"))
         scroll.add_widget(self.log_container)
         layout.add_widget(scroll)
@@ -163,18 +172,23 @@ class HomeScreen(Screen):
         log_label = Label(
             text=f"[{timestamp}] {message}",
             size_hint_y=None,
-            height=32,
-            font_size="13sp",
+            height=40,
+            font_size="14sp",
             color=TEXT_REGULAR,
             halign="left",
-            valign="middle"
+            valign="top",
+            text_size=(None, None)
         )
-        log_label.bind(size=log_label.setter('text_size'))
         self.log_container.add_widget(log_label)
         
         # 限制日志数量
         if len(self.log_container.children) > 50:
             self.log_container.remove_widget(self.log_container.children[-1])
+    
+    def clear_logs(self):
+        """清空日志"""
+        self.log_container.clear_widgets()
+        self.add_log("日志已清空")
     
     def update_status(self):
         latest = self.db_manager.get_latest_analysis()
@@ -279,81 +293,55 @@ class ResultsScreen(Screen):
             card = BoxLayout(
                 orientation="vertical",
                 size_hint_y=None,
-                height=110,
-                padding=[15, 12]
+                height=140,
+                padding=[15, 12],
+                spacing=5
             )
             
             # 白色卡片背景
-            from kivy.graphics import Color, Rectangle, RoundedRectangle
+            from kivy.graphics import Color, Rectangle
             with card.canvas.before:
                 Color(*BG_WHITE)
-                card.rect = RoundedRectangle(pos=card.pos, size=card.size, radius=[8])
+                card.rect = Rectangle(pos=card.pos, size=card.size)
             card.bind(pos=lambda obj, val: setattr(obj.rect, "pos", val))
             card.bind(size=lambda obj, val: setattr(obj.rect, "size", val))
             
             # 顶部: 币种名称和排名
-            top_row = BoxLayout(size_hint_y=0.35, spacing=10)
-            symbol_label = Label(
+            top_row = BoxLayout(size_hint_y=0.25, spacing=10)
+            top_row.add_widget(Label(
                 text=r['symbol'],
-                font_size="19sp",
+                font_size="18sp",
                 bold=True,
-                color=PRIMARY_COLOR,
-                halign="left",
-                valign="middle"
-            )
-            symbol_label.bind(size=symbol_label.setter('text_size'))
-            top_row.add_widget(symbol_label)
-            
-            rank_label = Label(
+                color=PRIMARY_COLOR
+            ))
+            top_row.add_widget(Label(
                 text=f"#{i}",
                 size_hint_x=0.2,
-                font_size="16sp",
+                font_size="15sp",
                 bold=True,
                 color=TEXT_SECONDARY
-            )
-            top_row.add_widget(rank_label)
+            ))
             card.add_widget(top_row)
             
-            # 中部: 涨幅数据 - 使用颜色区分
-            gains_row = BoxLayout(size_hint_y=0.4, spacing=8)
-            
-            for label, gain_key in [("1日", "gain_1d"), ("2日", "gain_2d"), ("3日", "gain_3d")]:
+            # 涨幅数据 - 简化为三行显示
+            for period, gain_key in [("1日", "gain_1d"), ("2日", "gain_2d"), ("3日", "gain_3d")]:
                 gain_val = r[gain_key] * 100
                 gain_color = SUCCESS_COLOR if gain_val > 0 else DANGER_COLOR
                 
-                gain_box = BoxLayout(orientation="vertical", spacing=2)
-                gain_box.add_widget(Label(
-                    text=label,
-                    font_size="11sp",
-                    color=TEXT_SECONDARY,
-                    size_hint_y=0.4
+                gain_row = BoxLayout(size_hint_y=0.25, spacing=5)
+                gain_row.add_widget(Label(
+                    text=period,
+                    size_hint_x=0.2,
+                    font_size="14sp",
+                    color=TEXT_REGULAR
                 ))
-                gain_box.add_widget(Label(
-                    text=f"{gain_val:+.1f}%",
-                    font_size="15sp",
+                gain_row.add_widget(Label(
+                    text=f"{gain_val:+.2f}%",
+                    font_size="16sp",
                     bold=True,
-                    color=gain_color,
-                    size_hint_y=0.6
+                    color=gain_color
                 ))
-                gains_row.add_widget(gain_box)
-            
-            card.add_widget(gains_row)
-            
-            # 底部: 触发条件 - 简化显示
-            conditions_text = " · ".join(r['conditions'][:2])  # 只显示前2个条件
-            if len(r['conditions']) > 2:
-                conditions_text += f" +{len(r['conditions'])-2}"
-            
-            conditions_label = Label(
-                text=conditions_text,
-                size_hint_y=0.25,
-                font_size="12sp",
-                color=TEXT_SECONDARY,
-                halign="left",
-                valign="middle"
-            )
-            conditions_label.bind(size=conditions_label.setter('text_size'))
-            card.add_widget(conditions_label)
+                card.add_widget(gain_row)
             
             self.results_container.add_widget(card)
 
@@ -388,26 +376,30 @@ class ScheduleScreen(Screen):
             color=(0.1, 0.1, 0.1, 1)
         ))
         
-        interval_box = BoxLayout(size_hint_y=0.08, spacing=10)
+        interval_box = BoxLayout(size_hint_y=0.09, spacing=10)
         current_interval = self.config_manager.get("schedule_interval", 7200)
         minutes = current_interval // 60
         seconds = current_interval % 60
         
-        interval_box.add_widget(Label(text="分钟:", size_hint_x=0.2, color=(0.1, 0.1, 0.1, 1)))
+        interval_box.add_widget(Label(text="分钟:", size_hint_x=0.2, color=TEXT_PRIMARY))
         self.minutes_input = TextInput(
             text=str(minutes),
             multiline=False,
             input_filter='int',
-            size_hint_x=0.3
+            size_hint_x=0.3,
+            font_size='16sp',
+            padding=[10, 8]
         )
         interval_box.add_widget(self.minutes_input)
         
-        interval_box.add_widget(Label(text="秒:", size_hint_x=0.2, color=(0.1, 0.1, 0.1, 1)))
+        interval_box.add_widget(Label(text="秒:", size_hint_x=0.2, color=TEXT_PRIMARY))
         self.seconds_input = TextInput(
             text=str(seconds),
             multiline=False,
             input_filter='int',
-            size_hint_x=0.3
+            size_hint_x=0.3,
+            font_size='16sp',
+            padding=[10, 8]
         )
         interval_box.add_widget(self.seconds_input)
         layout.add_widget(interval_box)
@@ -477,35 +469,16 @@ class ScheduleScreen(Screen):
     def toggle_schedule(self, switch, value):
         self.config_manager.set("schedule_enabled", value)
         
-        # 在Android上使用前台服务
+        # 使用线程服务(Android和桌面通用)
         if value:
-            try:
-                from android import mActivity
-                from jnius import autoclass
-                
-                # 启动Android前台服务
-                service = autoclass('org.kivy.android.PythonService')
-                service.start(mActivity, 'Analysis Service Running')
-                print("[主程序] Android服务已启动")
-            except ImportError:
-                # 非Android平台,使用普通线程服务
-                self.service.start_service()
-                print("[主程序] 线程服务已启动")
+            self.service.start_service()
+            print("[定时服务] 已启动")
         else:
-            try:
-                from android import mActivity
-                from jnius import autoclass
-                
-                # 停止Android服务
-                service = autoclass('org.kivy.android.PythonService')
-                service.stop(mActivity)
-                print("[主程序] Android服务已停止")
-            except ImportError:
-                self.service.stop_service()
-                print("[主程序] 线程服务已停止")
+            self.service.stop_service()
+            print("[定时服务] 已停止")
         
         self.next_run_label.text = self._get_next_run_text()
-        self.next_run_label.color = (0.1, 0.1, 0.1, 1)
+        self.next_run_label.color = TEXT_PRIMARY
 
 
 class HistoryScreen(Screen):
@@ -620,14 +593,20 @@ class HistoryScreen(Screen):
             item.bind(size=lambda obj, val: setattr(obj.rect, "size", val))
             
             timestamp = h["timestamp"][:16].replace("T", " ")
-            info_label = Label(
-                text=f"{timestamp}\n找到 {h['symbol_count']} 个币种",
+            info_box = BoxLayout(orientation="vertical", spacing=2)
+            info_box.add_widget(Label(
+                text=timestamp,
                 font_size="14sp",
-                color=TEXT_REGULAR,
-                halign="left"
-            )
-            info_label.bind(size=info_label.setter('text_size'))
-            item.add_widget(info_label)
+                color=TEXT_PRIMARY,
+                size_hint_y=0.5
+            ))
+            info_box.add_widget(Label(
+                text=f"找到 {h['symbol_count']} 个币种",
+                font_size="13sp",
+                color=TEXT_SECONDARY,
+                size_hint_y=0.5
+            ))
+            item.add_widget(info_box)
             
             btn_view = create_rounded_button(
                 text="查看",
@@ -692,15 +671,15 @@ class SettingsScreen(Screen):
         ]
         
         for key, label, default in params:
-            box = BoxLayout(size_hint_y=None, height=80, spacing=10, padding=[0, 5])
-            box.add_widget(Label(text=label, size_hint_x=0.5, font_size="15sp", color=(0.1, 0.1, 0.1, 1)))
+            box = BoxLayout(size_hint_y=None, height=70, spacing=10, padding=[0, 5])
+            box.add_widget(Label(text=label, size_hint_x=0.5, font_size="15sp", color=TEXT_PRIMARY))
             
             input_field = TextInput(
                 text=str(self.config_manager.get(key, default)),
                 multiline=False,
                 size_hint_x=0.5,
-                font_size="16sp",
-                padding=[10, 15]
+                font_size="15sp",
+                padding=[10, 12, 10, 12]
             )
             self.inputs[key] = input_field
             box.add_widget(input_field)
