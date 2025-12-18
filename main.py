@@ -52,7 +52,7 @@ class HomeScreen(Screen):
         layout.add_widget(self.status_label)
         
         btn_analyze = Button(
-            text="▶ 立即分析",
+            text="立即分析",
             size_hint_y=0.12,
             background_color=(0.1, 0.6, 0.3, 1),
             font_size="18sp"
@@ -61,25 +61,25 @@ class HomeScreen(Screen):
         layout.add_widget(btn_analyze)
         
         btn_schedule = Button(
-            text="⏰ 定时设置",
+            text="定时设置",
             size_hint_y=0.12,
             background_color=(0.2, 0.5, 0.8, 1),
             font_size="18sp"
         )
-        btn_schedule.bind(on_press=lambda x: self.manager.current = "schedule")
+        btn_schedule.bind(on_press=lambda x: setattr(self.manager, "current", "schedule"))
         layout.add_widget(btn_schedule)
         
         btn_history = Button(
-            text="📜 历史记录",
+            text="历史记录",
             size_hint_y=0.12,
             background_color=(0.6, 0.4, 0.2, 1),
             font_size="18sp"
         )
-        btn_history.bind(on_press=lambda x: self.manager.current = "history")
+        btn_history.bind(on_press=lambda x: setattr(self.manager, "current", "history"))
         layout.add_widget(btn_history)
         
         btn_settings = Button(
-            text="⚙ 设置",
+            text="设置",
             size_hint_y=0.12,
             background_color=(0.5, 0.5, 0.5, 1),
             font_size="18sp"
@@ -155,7 +155,7 @@ class ResultsScreen(Screen):
         self.layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
         
         top_bar = BoxLayout(size_hint_y=0.08, spacing=10)
-        btn_back = Button(text="← 返回", background_color=(0.5, 0.5, 0.5, 1))
+        btn_back = Button(text="返回", background_color=(0.5, 0.5, 0.5, 1))
         btn_back.bind(on_press=lambda x: setattr(self.manager, "current", "home"))
         top_bar.add_widget(btn_back)
         self.layout.add_widget(top_bar)
@@ -205,7 +205,7 @@ class ResultsScreen(Screen):
             item.bind(size=lambda obj, val: setattr(obj.rect, "size", val))
             
             symbol_label = Label(
-                text=f"🔥 {r['symbol']}",
+                text=f"#{r['symbol']}",
                 size_hint_y=0.3,
                 font_size="16sp",
                 bold=True,
@@ -246,7 +246,7 @@ class ScheduleScreen(Screen):
         layout = BoxLayout(orientation="vertical", padding=20, spacing=15)
         
         top_bar = BoxLayout(size_hint_y=0.08, spacing=10)
-        btn_back = Button(text="← 返回", background_color=(0.5, 0.5, 0.5, 1))
+        btn_back = Button(text="返回", background_color=(0.5, 0.5, 0.5, 1))
         btn_back.bind(on_press=lambda x: setattr(self.manager, "current", "home"))
         top_bar.add_widget(btn_back)
         layout.add_widget(top_bar)
@@ -338,11 +338,11 @@ class HistoryScreen(Screen):
         layout = BoxLayout(orientation="vertical", padding=10, spacing=10)
         
         top_bar = BoxLayout(size_hint_y=0.08, spacing=10)
-        btn_back = Button(text="← 返回", background_color=(0.5, 0.5, 0.5, 1))
+        btn_back = Button(text="返回", background_color=(0.5, 0.5, 0.5, 1))
         btn_back.bind(on_press=lambda x: setattr(self.manager, "current", "home"))
         top_bar.add_widget(btn_back)
         
-        btn_refresh = Button(text="🔄 刷新", background_color=(0.2, 0.6, 0.8, 1))
+        btn_refresh = Button(text="刷新", background_color=(0.2, 0.6, 0.8, 1))
         btn_refresh.bind(on_press=lambda x: self.load_history())
         top_bar.add_widget(btn_refresh)
         layout.add_widget(top_bar)
@@ -426,7 +426,7 @@ class SettingsScreen(Screen):
         layout = BoxLayout(orientation="vertical", padding=20, spacing=10)
         
         top_bar = BoxLayout(size_hint_y=0.06, spacing=10)
-        btn_back = Button(text="← 返回", background_color=(0.5, 0.5, 0.5, 1))
+        btn_back = Button(text="返回", background_color=(0.5, 0.5, 0.5, 1))
         btn_back.bind(on_press=lambda x: setattr(self.manager, "current", "home"))
         top_bar.add_widget(btn_back)
         layout.add_widget(top_bar)
