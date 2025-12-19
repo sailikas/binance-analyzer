@@ -39,30 +39,59 @@ class AnalysisService:
     
     def _service_loop(self):
         import datetime
-        self._log("[定时服务] 已启动")
+        self._log("[定时服务] 已启动 - 24小时保活模式")
+        
+        last_heartbeat = datetime.datetime.now()
+        heartbeat_interval = 300  # 每5分钟打印一次心跳
         
         while self.is_running:
-            schedule_enabled = self.config_manager.get("schedule_enabled", False)
-            
-            if schedule_enabled:
-                try:
-                    self._log("[定时分析] 开始执行...")
-                    self._run_analysis()
-                    self._log("[定时分析] 执行完成")
-                except Exception as e:
-                    self._log(f"[定时分析] 出错: {str(e)[:50]}")
-                    import traceback
-                    traceback.print_exc()
-                    if self.config_manager.get("notify_on_complete", True):
-                        self.notif_manager.notify_error(str(e))
-            
-            interval = self.config_manager.get("schedule_interval", 7200)
-            
-            for i in range(interval):
-                if not self.is_running:
-                    self._log("[定时服务] 已停止")
-                    break
-                time.sleep(1)
+            try:
+                # 心跳检测
+                now = datetime.datetime.now()
+                if (now - last_heartbeat).total_seconds() >= heartbeat_interval:
+                    self._log(f"[心跳] 服务运行中 - {now.strftime('%Y-%m-%d %H:%M:%S')}")
+                    last_heartbeat = now
+                
+                schedule_enabled = self.config_manager.get("schedule_enabled", False)
+                
+                if schedule_enabled:
+                    try:
+                        self._log("[定时分析] 开始执行...")
+                        self._run_analysis()
+                        self._log("[定时分析] 执行完成")
+                    except Exception as e:
+                        self._log(f"[定时分析] 出错: {str(e)[:100]}")
+                        import traceback
+                        traceback.print_exc()
+                        
+                        # 发送错误通知
+                        try:
+                            if self.config_manager.get("notify_on_complete", True):
+                                self.notif_manager.notify_error(str(e))
+                        except:
+                            pass
+                        
+                        # 等待30秒后继续（避免频繁出错）
+                        time.sleep(30)
+                        continue
+                
+                interval = self.config_manager.get("schedule_interval", 7200)
+                
+                # 分段睡眠，每10秒检查一次是否需要停止
+                for i in range(0, interval, 10):
+                    if not self.is_running:
+                        self._log("[定时服务] 收到停止信号")
+                        break
+                    time.sleep(min(10, interval - i))
+                    
+            except Exception as e:
+                # 服务循环出错，记录日志但不退出
+                self._log(f"[定时服务] 循环异常: {str(e)[:100]}")
+                import traceback
+                traceback.print_exc()
+                time.sleep(60)  # 等待1分钟后重试
+        
+        self._log("[定时服务] 已停止")
     
     def _log(self, message):
         """发送日志到回调函数"""

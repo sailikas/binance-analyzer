@@ -986,11 +986,13 @@ class BinanceAnalyzerApp(App):
         # 处理通知点击跳转
         self.handle_notification_intent()
         
+        # 启动前台服务（24小时保活）
+        self.start_foreground_service()
+        
         # 获取WakeLock保持后台运行
         self.acquire_wakelock()
         
         # 根据配置决定是否自动最小化
-        config_manager = ConfigManager()
         if config_manager.get("auto_minimize", False):
             minimize_delay = config_manager.get("minimize_delay", 0.5)
             Clock.schedule_once(lambda dt: self.minimize_to_background(), minimize_delay)
@@ -1108,6 +1110,105 @@ class BinanceAnalyzerApp(App):
             return Build.MANUFACTURER.lower()
         except:
             return "unknown"
+    
+    def start_foreground_service(self):
+        """启动前台服务，实现24小时不间断运行"""
+        try:
+            from jnius import autoclass
+            from datetime import datetime
+            
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            NotificationBuilder = autoclass('android.app.Notification$Builder')
+            NotificationChannel = autoclass('android.app.NotificationChannel')
+            NotificationManager = autoclass('android.app.NotificationManager')
+            Context = autoclass('android.content.Context')
+            Intent = autoclass('android.content.Intent')
+            PendingIntent = autoclass('android.app.PendingIntent')
+            Color = autoclass('android.graphics.Color')
+            
+            activity = PythonActivity.mActivity
+            notification_service = activity.getSystemService(Context.NOTIFICATION_SERVICE)
+            
+            # 创建前台服务通知渠道（高优先级，确保不被系统杀死）
+            channel_id = "foreground_service_channel_high"
+            channel_name = "24小时后台服务"
+            importance = NotificationManager.IMPORTANCE_DEFAULT  # 改为DEFAULT优先级
+            
+            channel = NotificationChannel(channel_id, channel_name, importance)
+            channel.setDescription("保持应用24小时不间断运行")
+            channel.enableVibration(False)  # 关闭振动
+            channel.enableLights(False)  # 关闭指示灯
+            channel.setSound(None, None)  # 关闭声音
+            channel.setShowBadge(False)  # 不显示角标
+            notification_service.createNotificationChannel(channel)
+            
+            # 创建点击通知的Intent
+            intent = Intent(activity, activity.getClass())
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            intent.putExtra("notification_action", "open_home")
+            
+            try:
+                pending_intent = PendingIntent.getActivity(
+                    activity, 0, intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                )
+            except:
+                pending_intent = PendingIntent.getActivity(
+                    activity, 0, intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            
+            # 创建前台服务通知（更详细的信息）
+            current_time = datetime.now().strftime("%H:%M:%S")
+            builder = NotificationBuilder(activity, channel_id)
+            builder.setContentTitle("🔄 币安分析工具运行中")
+            builder.setContentText(f"后台服务已启动 | {current_time}")
+            builder.setSmallIcon(activity.getApplicationInfo().icon)
+            builder.setContentIntent(pending_intent)
+            builder.setOngoing(True)  # 持久通知，不可删除
+            builder.setAutoCancel(False)  # 点击后不消失
+            builder.setShowWhen(True)  # 显示时间
+            builder.setWhen(int(datetime.now().timestamp() * 1000))
+            
+            # 设置优先级（确保前台服务不被杀死）
+            try:
+                builder.setPriority(NotificationBuilder.PRIORITY_DEFAULT)
+            except:
+                pass
+            
+            # 添加操作按钮（可选）
+            try:
+                # 停止服务按钮
+                stop_intent = Intent(activity, activity.getClass())
+                stop_intent.putExtra("action", "stop_service")
+                stop_pending = PendingIntent.getActivity(
+                    activity, 1, stop_intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                )
+                # builder.addAction(0, "停止", stop_pending)  # 可选：添加停止按钮
+            except:
+                pass
+            
+            notification = builder.build()
+            
+            # 显示前台服务通知（ID=999，高优先级）
+            notification_service.notify(999, notification)
+            
+            print(f"[前台服务] 已启动 - 24小时保活模式")
+            print(f"[前台服务] 通知ID: 999")
+            print(f"[前台服务] 优先级: DEFAULT")
+            print(f"[前台服务] 启动时间: {current_time}")
+            
+            return True
+            
+        except ImportError:
+            print("[前台服务] 非Android平台，跳过")
+            return False
+        except Exception as e:
+            print(f"[前台服务] 启动失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def request_android_permissions(self):
         """检查并请求Android权限"""
