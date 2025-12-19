@@ -53,14 +53,17 @@ class NotificationManager:
             return False
     
     def _send_android_native(self, title, message):
-        """发送Android原生通知(支持Android 13+)"""
+        """发送Android原生通知(支持Android 13+)，包含时间和点击跳转"""
         try:
             from jnius import autoclass, cast
+            from datetime import datetime
             
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             NotificationBuilder = autoclass('android.app.Notification$Builder')
             NotificationManager = autoclass('android.app.NotificationManager')
             Context = autoclass('android.content.Context')
+            Intent = autoclass('android.content.Intent')
+            PendingIntent = autoclass('android.app.PendingIntent')
             
             activity = PythonActivity.mActivity
             notification_service = cast(NotificationManager, 
@@ -69,13 +72,43 @@ class NotificationManager:
             # 为Android 8.0+创建通知渠道
             self._create_notification_channel()
             
+            # 创建点击通知时的Intent（跳转到应用主界面）
+            intent = Intent(activity, activity.getClass())
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            intent.putExtra("notification_action", "open_results")  # 传递参数，可用于跳转到结果页面
+            
+            # 创建PendingIntent
+            try:
+                # Android 12+ 需要设置 FLAG_IMMUTABLE
+                pending_intent = PendingIntent.getActivity(
+                    activity, 
+                    0, 
+                    intent, 
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                )
+            except:
+                # 兼容旧版本
+                pending_intent = PendingIntent.getActivity(
+                    activity, 
+                    0, 
+                    intent, 
+                    PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            
+            # 在消息中添加时间
+            current_time = datetime.now().strftime("%H:%M:%S")
+            message_with_time = f"[{current_time}] {message}"
+            
             # 创建通知
             channel_id = "binance_analyzer_channel"
             builder = NotificationBuilder(activity, channel_id)
             builder.setContentTitle(title)
-            builder.setContentText(message)
+            builder.setContentText(message_with_time)
             builder.setSmallIcon(activity.getApplicationInfo().icon)
             builder.setAutoCancel(True)
+            builder.setContentIntent(pending_intent)  # 设置点击Intent
+            builder.setWhen(int(datetime.now().timestamp() * 1000))  # 设置通知时间戳
+            builder.setShowWhen(True)  # 显示时间
             
             # Android 8.0+需要设置优先级
             try:
@@ -85,10 +118,12 @@ class NotificationManager:
                 pass
             
             notification_service.notify(1, builder.build())
-            print(f"[通知] Android原生通知发送成功")
+            print(f"[通知] Android原生通知发送成功 (时间: {current_time})")
             return True
         except Exception as e:
             print(f"[通知] Android原生通知失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def _send_plyer(self, title, message, timeout=10):
@@ -204,6 +239,18 @@ class NotificationManager:
         message = "、".join(parts)
         return self.send_notification(title, message, timeout=15)
     
+    def notify_zero_result(self, previous_count):
+        """当从有结果变成0结果时发送通知"""
+        title = "匹配结果清零"
+        message = f"之前有 {previous_count} 个币种符合条件，现在已全部不符合条件"
+        return self.send_notification(title, message, timeout=15)
+    
     def notify_error(self, error_msg):
         title = "分析出错"
         return self.send_notification(title, error_msg[:100])
+    
+    def notify_zero_result(self, previous_count):
+        """发送匹配数量变为0的通知"""
+        title = "匹配数量清零"
+        message = f"之前有 {previous_count} 个币种符合条件\n现在匹配数量已降为 0"
+        return self.send_notification(title, message, timeout=15)

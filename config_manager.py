@@ -23,7 +23,9 @@ class ConfigManager:
             "serverchan_enabled": True,
             "serverchan_key": "",
             "serverchan_title": "币安分析完成",
-            "serverchan_content": "找到 {count} 个符合条件的交易对"
+            "serverchan_content": "找到 {count} 个符合条件的交易对",
+            "auto_minimize": False,
+            "minimize_delay": 0.5
         }
         self.config = self.load_config()
     

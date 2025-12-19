@@ -963,6 +963,10 @@ class MainContainer(BoxLayout):
 
 
 class BinanceAnalyzerApp(App):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.wake_lock = None
+    
     def build(self):
         return MainContainer()
     
@@ -978,6 +982,132 @@ class BinanceAnalyzerApp(App):
         config_manager = ConfigManager()
         if config_manager.get("schedule_enabled", False):
             service.start_service()
+        
+        # 处理通知点击跳转
+        self.handle_notification_intent()
+        
+        # 获取WakeLock保持后台运行
+        self.acquire_wakelock()
+        
+        # 根据配置决定是否自动最小化
+        config_manager = ConfigManager()
+        if config_manager.get("auto_minimize", False):
+            minimize_delay = config_manager.get("minimize_delay", 0.5)
+            Clock.schedule_once(lambda dt: self.minimize_to_background(), minimize_delay)
+    
+    def handle_notification_intent(self):
+        """处理通知点击跳转"""
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            activity = PythonActivity.mActivity
+            intent = activity.getIntent()
+            
+            if intent:
+                # 获取Intent中的额外参数
+                notification_action = intent.getStringExtra("notification_action")
+                
+                if notification_action == "open_results":
+                    print("[通知跳转] 检测到通知点击，跳转到结果页面")
+                    # 延迟跳转，确保UI已完全初始化
+                    Clock.schedule_once(lambda dt: self._navigate_to_results(), 0.5)
+                else:
+                    print(f"[通知跳转] 未知操作: {notification_action}")
+        except ImportError:
+            print("[通知跳转] 非Android平台，跳过Intent检查")
+        except Exception as e:
+            print(f"[通知跳转] Intent处理失败: {e}")
+    
+    def _navigate_to_results(self):
+        """导航到结果页面"""
+        try:
+            screen_manager = self.root.screen_manager
+            screen_manager.current = "results"
+            print("[通知跳转] 已跳转到结果页面")
+        except Exception as e:
+            print(f"[通知跳转] 页面跳转失败: {e}")
+    
+    def acquire_wakelock(self):
+        """获取WakeLock，防止系统休眠，确保后台和锁屏保活"""
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Context = autoclass('android.content.Context')
+            PowerManager = autoclass('android.os.PowerManager')
+            
+            activity = PythonActivity.mActivity
+            power_manager = activity.getSystemService(Context.POWER_SERVICE)
+            
+            # 创建WakeLock (PARTIAL_WAKE_LOCK: CPU保持运行，屏幕可以关闭)
+            self.wake_lock = power_manager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                'BinanceAnalyzer::AppWakeLock'
+            )
+            self.wake_lock.acquire()
+            print("[WakeLock] 已获取，应用将在后台和锁屏时保持运行")
+        except ImportError:
+            print("[WakeLock] 非Android平台，跳过WakeLock获取")
+        except Exception as e:
+            print(f"[WakeLock] 获取失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def release_wakelock(self):
+        """释放WakeLock"""
+        if self.wake_lock:
+            try:
+                self.wake_lock.release()
+                print("[WakeLock] 已释放")
+            except Exception as e:
+                print(f"[WakeLock] 释放失败: {e}")
+    
+    def minimize_to_background(self):
+        """将应用最小化到后台，尽量不显示在最近任务中"""
+        try:
+            from jnius import autoclass
+            
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Intent = autoclass('android.content.Intent')
+            
+            activity = PythonActivity.mActivity
+            
+            # 方法1: 将Activity移到后台
+            activity.moveTaskToBack(True)
+            print("[后台运行] 应用已最小化到后台")
+            
+            # 方法2: 设置Activity为不显示在最近任务（需要在启动时设置）
+            # 这个方法需要修改AndroidManifest.xml，在Kivy中较难实现
+            
+            # 方法3: 针对iQOO/vivo手机的特殊优化
+            try:
+                manufacturer = self._get_manufacturer()
+                if manufacturer in ['vivo', 'iqoo']:
+                    print("[后台运行] 检测到iQOO/vivo设备，应用优化建议：")
+                    print("  1. i管家 → 应用管理 → 权限管理 → 自启动 → 开启")
+                    print("  2. i管家 → 省电管理 → 后台高耗电 → 允许")
+                    print("  3. 设置 → 电池 → 后台耗电管理 → 允许后台高耗电")
+            except:
+                pass
+            
+            return True
+            
+        except ImportError:
+            print("[后台运行] 非Android平台，跳过")
+            return False
+        except Exception as e:
+            print(f"[后台运行] 最小化失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def _get_manufacturer(self):
+        """获取设备厂商"""
+        try:
+            from jnius import autoclass
+            Build = autoclass('android.os.Build')
+            return Build.MANUFACTURER.lower()
+        except:
+            return "unknown"
     
     def request_android_permissions(self):
         """检查并请求Android权限"""
@@ -1024,6 +1154,9 @@ class BinanceAnalyzerApp(App):
     def on_stop(self):
         service = get_service()
         service.stop_service()
+        
+        # 释放WakeLock
+        self.release_wakelock()
 
 
 if __name__ == "__main__":

@@ -78,28 +78,66 @@ class AnalysisService:
         analyzer = BinanceAnalyzer(config=analyzer_config)
         
         results = analyzer.analyze()
-        self._log(f"[定时分析] 找到 {len(results)} 个币种")
+        current_count = len(results)
+        self._log(f"[定时分析] 找到 {current_count} 个币种")
         
+        # 获取上次分析结果
         last_analysis = self.db_manager.get_latest_analysis()
+        last_count = len(last_analysis["results"]) if last_analysis else 0
+        
+        # 保存本次分析结果
         self.db_manager.save_analysis(results, analyzer_config)
         
-        if self.config_manager.get("notify_on_complete", True):
+        # 通知逻辑：
+        # 1. 当前结果为0 且 上次也是0 -> 不通知
+        # 2. 当前结果为0 且 上次>0 -> 通知（从有变无）
+        # 3. 当前结果>0 -> 正常通知
+        
+        should_notify = False
+        notify_type = None
+        
+        if current_count == 0:
+            if last_count > 0:
+                # 从有结果变成无结果，发送特殊通知
+                should_notify = True
+                notify_type = "zero_from_nonzero"
+                self._log(f"[通知逻辑] 匹配数量从 {last_count} 变为 0，将发送通知")
+            else:
+                # 持续为0，不通知
+                self._log(f"[通知逻辑] 匹配数量为 0，跳过通知")
+        else:
+            # 有结果，正常通知
+            should_notify = True
+            notify_type = "normal"
+            self._log(f"[通知逻辑] 找到 {current_count} 个币种，将发送通知")
+        
+        # 发送通知
+        if should_notify and self.config_manager.get("notify_on_complete", True):
             self._log("[定时分析] 准备发送完成通知...")
-            result = self.notif_manager.notify_analysis_complete(len(results), results)
+            
+            if notify_type == "zero_from_nonzero":
+                # 发送特殊的"清零"通知
+                result = self.notif_manager.notify_zero_result(last_count)
+            else:
+                # 正常通知
+                result = self.notif_manager.notify_analysis_complete(current_count, results)
+            
             self._log(f"[定时分析] 通知发送{'成功' if result else '失败'}")
         
+        # 检测变化通知（仅当两次都有结果时）
         if last_analysis and self.config_manager.get("notify_on_change", True):
-            comparison = self.db_manager.compare_results(
-                last_analysis["results"],
-                results
-            )
-            
-            if comparison["has_changes"]:
-                self._log(f"[定时分析] 检测到变化: +{len(comparison['new'])} -{len(comparison['removed'])}")
-                self.notif_manager.notify_changes_detected(
-                    len(comparison["new"]),
-                    len(comparison["removed"])
+            if current_count > 0 and last_count > 0:
+                comparison = self.db_manager.compare_results(
+                    last_analysis["results"],
+                    results
                 )
+                
+                if comparison["has_changes"]:
+                    self._log(f"[定时分析] 检测到变化: +{len(comparison['new'])} -{len(comparison['removed'])}")
+                    self.notif_manager.notify_changes_detected(
+                        len(comparison["new"]),
+                        len(comparison["removed"])
+                    )
         
         return results
 
