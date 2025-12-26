@@ -12,6 +12,10 @@ from kivy.uix.switch import Switch
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.progressbar import ProgressBar
 from kivy.uix.spinner import Spinner
+from kivy.uix.checkbox import CheckBox
+from kivy.uix.widget import Widget
+from kivy.uix.behaviors import ButtonBehavior
+from kivy.animation import Animation
 from kivy.clock import Clock, mainthread
 from kivy.core.window import Window
 from kivy.core.text import LabelBase
@@ -26,6 +30,9 @@ try:
     if os.name == 'nt':  # Windows
         LabelBase.register(name='Roboto', 
                           fn_regular='C:\\Windows\\Fonts\\msyh.ttc')
+        # 注册支持emoji的字体
+        LabelBase.register(name='Emoji', 
+                          fn_regular='C:\\Windows\\Fonts\\seguiemj.ttf')
     else:  # Android/Linux
         # 尝试多个可能的字体路径
         font_paths = [
@@ -36,6 +43,16 @@ try:
         for font_path in font_paths:
             if os.path.exists(font_path):
                 LabelBase.register(name='Roboto', fn_regular=font_path)
+                break
+        
+        # 尝试注册emoji字体
+        emoji_font_paths = [
+            '/system/fonts/NotoColorEmoji.ttf',
+            '/system/fonts/AndroidEmoji.ttf'
+        ]
+        for font_path in emoji_font_paths:
+            if os.path.exists(font_path):
+                LabelBase.register(name='Emoji', fn_regular=font_path)
                 break
 except Exception as e:
     print(f"字体注册失败: {e}")
@@ -490,36 +507,145 @@ class HistoryScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.db_manager = DatabaseManager()
-        self.current_filter = 2  # 默认近2天
+        self.current_filter = 0  # 默认当天
+        self.show_zero_results = False  # 默认不显示0结果
+        self.page_size = 20  # 每页20条
+        self.current_page = 1
+        self.total_pages = 1
+        self.filtered_history = []
         
         layout = BoxLayout(orientation="vertical", padding=[dp(15), dp(10), dp(15), dp(10)], spacing=dp(10))
         
         # 标题
         layout.add_widget(Label(
             text="历史记录",
-            size_hint_y=0.06,
+            size_hint_y=0.05,
             font_size="20sp",
             bold=True,
             color=TEXT_PRIMARY
         ))
         
-        # 筛选按钮行
-        filter_box = BoxLayout(size_hint_y=0.08, spacing=dp(8))
-        self.filter_buttons = {}
+        # 筛选控制区
+        filter_layout = BoxLayout(orientation="vertical", size_hint_y=0.15, spacing=dp(8))
         
-        for days, label in [(2, "近2天"), (7, "近7天"), (30, "近30天"), (0, "全部")]:
-            btn = Button(
-                text=label,
-                background_color=PRIMARY_COLOR if days == 2 else BG_LIGHT,
-                font_size="14sp",
-                background_normal='',
-                background_down=''
-            )
-            btn.bind(on_press=lambda x, d=days: self.apply_filter(d))
-            self.filter_buttons[days] = btn
-            filter_box.add_widget(btn)
+        # 时间筛选输入行
+        time_filter_box = BoxLayout(size_hint_y=0.5, spacing=dp(8))
         
-        layout.add_widget(filter_box)
+        # 开始时间标签
+        start_label = Label(
+            text="开始时间:",
+            font_size="13sp",
+            color=TEXT_PRIMARY,
+            size_hint_x=0.15
+        )
+        time_filter_box.add_widget(start_label)
+        
+        # 开始时间输入
+        self.start_date_input = TextInput(
+            text="",
+            hint_text="YYYY-MM-DD",
+            multiline=False,
+            font_size="13sp",
+            size_hint_x=0.25
+        )
+        time_filter_box.add_widget(self.start_date_input)
+        
+        # 结束时间标签
+        end_label = Label(
+            text="结束时间:",
+            font_size="13sp",
+            color=TEXT_PRIMARY,
+            size_hint_x=0.15
+        )
+        time_filter_box.add_widget(end_label)
+        
+        # 结束时间输入
+        self.end_date_input = TextInput(
+            text="",
+            hint_text="YYYY-MM-DD",
+            multiline=False,
+            font_size="13sp",
+            size_hint_x=0.25
+        )
+        time_filter_box.add_widget(self.end_date_input)
+        
+        # 筛选按钮
+        filter_btn = Button(
+            text="筛选",
+            background_color=PRIMARY_COLOR,
+            font_size="13sp",
+            size_hint_x=0.2,
+            background_normal='',
+            background_down=''
+        )
+        filter_btn.bind(on_press=self.apply_date_filter)
+        time_filter_box.add_widget(filter_btn)
+        
+        filter_layout.add_widget(time_filter_box)
+        
+        # 选项和分页行
+        options_box = BoxLayout(size_hint_y=0.5, spacing=dp(8))
+        
+        # 显示0结果勾选框 - 放在文字旁边
+        self.zero_results_checkbox = CheckBox(
+            active=False, 
+            size_hint_x=None, 
+            width=dp(20),
+            height=dp(20),
+            size_hint_y=None,
+            color=(0.2, 0.6, 0.9, 1)  # 蓝色勾选框
+        )
+        self.zero_results_checkbox.bind(active=self.on_zero_results_toggle)
+        
+        # 创建一个水平布局放置勾选框和文字
+        checkbox_container = BoxLayout(
+            orientation='horizontal', 
+            size_hint_x=0.35, 
+            spacing=dp(5),
+            padding=[dp(5), 0, 0, 0]
+        )
+        checkbox_container.add_widget(self.zero_results_checkbox)
+        
+        zero_label = Label(
+            text="显示0结果",
+            font_size="12sp",
+            color=TEXT_PRIMARY,
+            size_hint_x=None,
+            text_size=(None, None),
+            halign='left'
+        )
+        checkbox_container.add_widget(zero_label)
+        
+        # 分页控制
+        self.page_label = Label(
+            text="第 1/1 页",
+            font_size="13sp",
+            color=TEXT_PRIMARY
+        )
+        
+        prev_btn = create_rounded_button(
+            text="上一页",
+            bg_color=BG_LIGHT,
+            font_size="12sp",
+            size_hint_x=0.15
+        )
+        prev_btn.bind(on_press=self.prev_page)
+        
+        next_btn = create_rounded_button(
+            text="下一页", 
+            bg_color=BG_LIGHT,
+            font_size="12sp",
+            size_hint_x=0.15
+        )
+        next_btn.bind(on_press=self.next_page)
+        
+        options_box.add_widget(checkbox_container)
+        options_box.add_widget(prev_btn)
+        options_box.add_widget(self.page_label)
+        options_box.add_widget(next_btn)
+        
+        filter_layout.add_widget(options_box)
+        layout.add_widget(filter_layout)
         
         # 统计信息
         self.stats_label = Label(
@@ -531,7 +657,7 @@ class HistoryScreen(Screen):
         layout.add_widget(self.stats_label)
         
         # 列表
-        self.scroll_view = ScrollView(size_hint=(1, 0.82))
+        self.scroll_view = ScrollView(size_hint=(1, 0.76))
         self.history_container = GridLayout(cols=1, spacing=dp(12), size_hint_y=None, padding=[0, dp(5)])
         self.history_container.bind(minimum_height=self.history_container.setter("height"))
         self.scroll_view.add_widget(self.history_container)
@@ -541,38 +667,116 @@ class HistoryScreen(Screen):
     
     def on_enter(self):
         # 确保属性已初始化
-        if not hasattr(self, 'current_filter'):
-            self.current_filter = 2
+        if not hasattr(self, 'show_zero_results'):
+            self.show_zero_results = False
+        # 默认显示当天数据
+        import datetime
+        today = datetime.datetime.now().date()
+        self.start_date_input.text = today.strftime("%Y-%m-%d")
+        self.end_date_input.text = today.strftime("%Y-%m-%d")
         self.load_history()
     
-    def apply_filter(self, days):
-        """应用筛选"""
-        self.current_filter = days
-        
-        # 更新按钮颜色
-        for d, btn in self.filter_buttons.items():
-            btn.background_color = PRIMARY_COLOR if d == days else BG_LIGHT
-        
+    def on_zero_results_toggle(self, checkbox, value):
+        """切换显示0结果"""
+        self.show_zero_results = value
+        self.current_page = 1  # 重置到第一页
         self.load_history()
+    
+    def apply_date_filter(self, instance):
+        """应用日期范围筛选"""
+        self.current_page = 1  # 重置到第一页
+        self.load_history()
+    
+    def parse_date(self, date_str):
+        """解析日期字符串"""
+        try:
+            import datetime
+            return datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+        except:
+            return None
+    
+    def prev_page(self, instance):
+        """上一页"""
+        if self.current_page > 1:
+            self.current_page -= 1
+            self.load_history()
+    
+    def next_page(self, instance):
+        """下一页"""
+        if self.current_page < self.total_pages:
+            self.current_page += 1
+            self.load_history()
+    
+    def get_result_count_color(self, count):
+        """根据结果数量返回颜色"""
+        if count == 0:
+            return TEXT_SECONDARY  # 灰色
+        elif count > 3:
+            return DANGER_COLOR  # 红色
+        else:
+            return SUCCESS_COLOR  # 绿色
     
     def load_history(self):
         self.history_container.clear_widgets()
         
-        # 获取并筛选数据
-        all_history = self.db_manager.get_history_list(500)
+        # 获取所有数据
+        all_history = self.db_manager.get_history_list(1000)  # 获取更多数据用于分页
         
-        if self.current_filter > 0:
+        # 日期范围筛选
+        start_date = self.parse_date(self.start_date_input.text)
+        end_date = self.parse_date(self.end_date_input.text)
+        
+        history = []
+        if start_date and end_date:
+            # 确保结束时间不小于开始时间
+            if end_date < start_date:
+                start_date, end_date = end_date, start_date
+            
+            # 包含整天的时间范围
             import datetime
-            cutoff = datetime.datetime.now() - datetime.timedelta(days=self.current_filter)
-            history = [h for h in all_history if datetime.datetime.fromisoformat(h["timestamp"]) >= cutoff]
+            start_datetime = datetime.datetime.combine(start_date, datetime.time.min)
+            end_datetime = datetime.datetime.combine(end_date, datetime.time.max)
+            
+            for h in all_history:
+                try:
+                    record_date = datetime.datetime.fromisoformat(h["timestamp"])
+                    if start_datetime <= record_date <= end_datetime:
+                        history.append(h)
+                except:
+                    continue
         else:
-            history = all_history[:50]
+            # 如果日期格式错误，显示当天数据
+            import datetime
+            today = datetime.datetime.now().date()
+            history = [h for h in all_history if datetime.datetime.fromisoformat(h["timestamp"]).date() == today]
         
-        # 更新统计
-        filter_text = f"近{self.current_filter}天" if self.current_filter > 0 else "全部"
-        self.stats_label.text = f"{filter_text}: 共 {len(history)} 条" if history else "暂无记录"
+        # 0结果筛选
+        if not self.show_zero_results:
+            history = [h for h in history if h["symbol_count"] > 0]
         
-        if not history:
+        # 按时间倒序排列（最新的在前面）
+        history.sort(key=lambda x: x["timestamp"], reverse=True)
+        
+        # 分页计算
+        self.filtered_history = history
+        self.total_pages = max(1, (len(history) + self.page_size - 1) // self.page_size)
+        self.current_page = min(self.current_page, self.total_pages)
+        
+        start_idx = (self.current_page - 1) * self.page_size
+        end_idx = start_idx + self.page_size
+        page_history = history[start_idx:end_idx]
+        
+        # 更新统计和分页信息
+        if start_date and end_date:
+            date_range_text = f"{start_date.strftime('%m-%d')} 至 {end_date.strftime('%m-%d')}"
+        else:
+            date_range_text = "日期格式错误"
+        
+        zero_text = "含0结果" if self.show_zero_results else "不含0结果"
+        self.stats_label.text = f"{date_range_text} {zero_text}: 共 {len(history)} 条"
+        self.page_label.text = f"第 {self.current_page}/{self.total_pages} 页"
+        
+        if not page_history:
             self.history_container.add_widget(Label(
                 text="暂无历史记录",
                 size_hint_y=None,
@@ -581,7 +785,7 @@ class HistoryScreen(Screen):
             ))
             return
         
-        for h in history:
+        for h in page_history:
             # 外层wrapper
             item_wrapper = BoxLayout(
                 orientation="horizontal",
@@ -610,10 +814,13 @@ class HistoryScreen(Screen):
                 size_hint_y=None,
                 height=dp(32)
             ))
+            
+            # 使用颜色控制的结果数量
+            count_color = self.get_result_count_color(h["symbol_count"])
             info_box.add_widget(Label(
                 text=f"找到 {h['symbol_count']} 个币种",
                 font_size="13sp",
-                color=TEXT_SECONDARY,
+                color=count_color,
                 size_hint_y=None,
                 height=dp(32)
             ))
@@ -813,6 +1020,16 @@ class SettingsScreen(Screen):
         btn_reset.bind(on_press=self.reset_settings)
         btn_box.add_widget(btn_reset)
         
+        # iQOO优化指南按钮
+        btn_iqoo = create_rounded_button(
+            text="iQOO保活设置",
+            bg_color=WARNING_COLOR,
+            font_size="17sp",
+            bold=True
+        )
+        btn_iqoo.bind(on_press=self.show_iqoo_guide)
+        btn_box.add_widget(btn_iqoo)
+        
         layout.add_widget(btn_box)
         
         self.status_label = Label(
@@ -848,8 +1065,147 @@ class SettingsScreen(Screen):
         self.config_manager.reset_to_default()
         for key, input_field in self.inputs.items():
             input_field.text = str(self.config_manager.get(key))
+    
+    def show_iqoo_guide(self, instance):
+        """显示iQOO保活设置指南"""
+        try:
+            from iqoo_optimizer import show_iqoo_setup_guide
+            guide_text = show_iqoo_setup_guide()
+            
+            # 创建弹窗显示指南
+            from kivy.uix.modalview import ModalView
+            from kivy.uix.label import Label
+            from kivy.uix.scrollview import ScrollView
+            from kivy.uix.boxlayout import BoxLayout
+            
+            view = ModalView(size_hint=(0.9, 0.8), background_color=(1, 1, 1, 0.95))
+            
+            # 主容器
+            main_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
+            
+            # 标题
+            title_label = Label(
+                text='[b][color=0066cc]iQOO/OriginOS 设置指南[/color][/b]',
+                font_size='18sp',
+                size_hint_y=None,
+                height=dp(40),
+                markup=True,
+                halign='center'
+            )
+            main_layout.add_widget(title_label)
+            
+            # 滚动内容
+            scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
+            label = Label(
+                text=guide_text,
+                text_size=(None, None),  # 让内容自适应
+                font_size='14sp',
+                color=(1.0, 0.98, 0.94, 1),  # 奶白色文字
+                valign='top',
+                halign='left',
+                markup=True,
+                padding=(dp(10), dp(10)),
+                size_hint_y=None,
+                size_hint_x=1
+            )
+            
+            # 使用Clock确保在下一帧更新text_size
+            from kivy.clock import Clock
+            def update_text_size(dt):
+                if view and hasattr(view, 'width'):
+                    label.text_size = (view.width * 0.9 - dp(40), None)
+                    label.texture_update()
+                    label.size = label.texture_size
+            
+            Clock.schedule_once(update_text_size)
+            view.bind(size=lambda *args: Clock.schedule_once(update_text_size))
+            label.bind(texture_size=label.setter('size'))
+            scroll.add_widget(label)
+            main_layout.add_widget(scroll)
+            
+            view.add_widget(main_layout)
+            view.open()
+            
+        except Exception as e:
+            self.status_label.text = f"指南加载失败: {str(e)[:50]}"
+            self.status_label.color = (0.8, 0.2, 0.2, 1)
         self.status_label.text = "✓ 已恢复默认设置"
         self.status_label.color = (0.2, 0.7, 0.2, 1)
+
+
+class IconWidget(Widget):
+    """简单的图形图标组件"""
+    def __init__(self, icon_type, color=(0.6, 0.6, 0.6, 1), **kwargs):
+        super().__init__(**kwargs)
+        self.icon_type = icon_type
+        self.color = color
+        self.size_hint = (None, None)
+        self.size = (dp(30), dp(30))
+        self.bind(pos=self.update_graphics)
+        self.bind(size=self.update_graphics)
+        self.update_graphics()
+    
+    def update_graphics(self, *args):
+        """更新图形"""
+        self.canvas.clear()
+        from kivy.graphics import Color, Line, Ellipse, Rectangle
+        
+        with self.canvas:
+            Color(*self.color)
+            
+            if self.icon_type == "history":
+                # 历史图标 - 简单的书本形状
+                Line(rectangle=(self.x + dp(5), self.y + dp(5), self.width - dp(10), self.height - dp(10)), width=dp(2))
+                Line(points=[self.x + dp(5), self.y + self.height/2, 
+                           self.x + self.width - dp(5), self.y + self.height/2], width=dp(1))
+                
+            elif self.icon_type == "schedule":
+                # 定时图标 - 时钟形状
+                Ellipse(pos=(self.x + dp(3), self.y + dp(3)), 
+                       size=(self.width - dp(6), self.height - dp(6)))
+                Line(points=[self.center_x, self.center_y,
+                           self.center_x, self.y + dp(10)], width=dp(2))
+                Line(points=[self.center_x, self.center_y,
+                           self.x + self.width - dp(10), self.center_y], width=dp(2))
+                
+            elif self.icon_type == "home":
+                # 主页图标 - 房子形状
+                points = [self.center_x, self.y + dp(5),
+                         self.x + dp(5), self.y + self.height/2,
+                         self.x + dp(5), self.y + self.height - dp(5),
+                         self.x + self.width - dp(5), self.y + self.height - dp(5),
+                         self.x + self.width - dp(5), self.y + self.height/2]
+                Line(points=points, width=dp(2))
+                
+            elif self.icon_type == "settings":
+                # 设置图标 - 齿轮形状
+                Ellipse(pos=(self.x + dp(8), self.y + dp(8)), 
+                       size=(self.width - dp(16), self.height - dp(16)))
+                # 画几个齿
+                for i in range(8):
+                    angle = i * 45
+                    import math
+                    x1 = self.center_x + math.cos(math.radians(angle)) * (self.width/2 - dp(2))
+                    y1 = self.center_y + math.sin(math.radians(angle)) * (self.height/2 - dp(2))
+                    x2 = self.center_x + math.cos(math.radians(angle)) * (self.width/2 - dp(6))
+                    y2 = self.center_y + math.sin(math.radians(angle)) * (self.height/2 - dp(6))
+                    Line(points=[x1, y1, x2, y2], width=dp(2))
+
+
+class NavButton(ButtonBehavior, BoxLayout):
+    """导航按钮"""
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+    
+    def on_press(self):
+        # 点击时改变透明度
+        anim = Animation(opacity=0.7, duration=0.1)
+        anim.start(self)
+    
+    def on_release(self):
+        # 释放时恢复透明度
+        anim = Animation(opacity=1.0, duration=0.1)
+        anim.start(self)
 
 
 class BottomNavBar(BoxLayout):
@@ -861,64 +1217,101 @@ class BottomNavBar(BoxLayout):
         self.padding = [0, dp(8), 0, dp(8)]
         self.spacing = 0
         self.screen_manager = screen_manager
+        self._initialized = False  # 防止重复初始化的标志
         
-        # 设置导航栏背景色
-        from kivy.graphics import Color, Rectangle
+        # 设置导航栏背景色和阴影效果
+        from kivy.graphics import Color, Rectangle, Line, RoundedRectangle
         with self.canvas.before:
-            Color(1, 1, 1, 1)
-            self.rect = Rectangle(pos=self.pos, size=self.size)
-        self.bind(pos=lambda obj, val: setattr(self.rect, "pos", val))
-        self.bind(size=lambda obj, val: setattr(self.rect, "size", val))
-        
-        # 创建导航按钮
-        self.nav_buttons = {}
-        nav_items = [
-            ("history", "历史", "📜"),
-            ("schedule", "定时", "⏰"),
-            ("home", "主页", "🏠"),
-            ("settings", "设置", "⚙")
-        ]
-        
-        for screen_name, label, icon in nav_items:
-            # 创建垂直布局容器
-            container = BoxLayout(orientation="vertical", padding=[dp(5), dp(5)])
-            
-            # 图标标签
-            icon_label = Label(
-                text=icon,
-                font_size="24sp",
-                size_hint_y=0.6,
-                color=(0.6, 0.6, 0.6, 1)
+            # 阴影效果
+            Color(0, 0, 0, 0.1)
+            self.shadow = RoundedRectangle(
+                pos=(self.pos[0], self.pos[1] - dp(2)),
+                size=(self.size[0], self.size[1]),
+                radius=[dp(10), dp(10), 0, 0]
             )
-            
-            # 文字标签
-            text_label = Label(
-                text=label,
-                font_size="11sp",
-                size_hint_y=0.4,
-                color=(0.6, 0.6, 0.6, 1)
+            # 白色背景
+            Color(1, 1, 1, 0.95)
+            self.rect = RoundedRectangle(
+                pos=self.pos,
+                size=self.size,
+                radius=[dp(10), dp(10), 0, 0]
             )
+            # 顶部分割线
+            Color(0.9, 0.9, 0.9, 1)
+            self.border_line = Line(
+                points=[self.pos[0], self.pos[1] + self.size[1], 
+                       self.pos[0] + self.size[0], self.pos[1] + self.size[1]],
+                width=dp(1)
+            )
+        
+        self.bind(pos=self._update_graphics)
+        self.bind(size=self._update_graphics)
+    
+    def _update_graphics(self, *args):
+        """更新图形元素位置"""
+        if hasattr(self, 'shadow'):
+            self.shadow.pos = (self.pos[0], self.pos[1] - dp(2))
+            self.shadow.size = self.size
+        if hasattr(self, 'rect'):
+            self.rect.pos = self.pos
+            self.rect.size = self.size
+        if hasattr(self, 'border_line'):
+            self.border_line.points = [
+                self.pos[0], self.pos[1] + self.size[1], 
+                self.pos[0] + self.size[0], self.pos[1] + self.size[1]
+            ]
+        
+        # 创建导航按钮（只初始化一次）
+        if not self._initialized:
+            self.nav_buttons = {}
+            nav_items = [
+                ("history", "历史", "📚"),
+                ("schedule", "定时", "⏰"),
+                ("home", "主页", "🏠"),
+                ("settings", "设置", "⚙️")
+            ]
             
-            container.add_widget(icon_label)
-            container.add_widget(text_label)
+            for screen_name, label, icon in nav_items:
+                # 创建垂直布局容器
+                container = BoxLayout(orientation="vertical", padding=[dp(8), dp(6)])
+                
+                # 图标标签 - 使用emoji
+                icon_label = Label(
+                    text=icon,
+                    font_name="Emoji",  # 使用emoji字体
+                    font_size="24sp",
+                    size_hint_y=0.65,
+                    color=(0.6, 0.6, 0.6, 1)
+                )
+                
+                # 文字标签
+                text_label = Label(
+                    text=label,
+                    font_size="10sp",
+                    size_hint_y=0.35,
+                    color=(0.6, 0.6, 0.6, 1),
+                    bold=True
+                )
+                
+                container.add_widget(icon_label)
+                container.add_widget(text_label)
+                
+                # 创建透明按钮
+                btn = NavButton(orientation="vertical", size_hint_x=1)  # 每个按钮平均分配宽度
+                btn.add_widget(container)
+                btn.bind(on_press=lambda x, s=screen_name: self.switch_screen(s))
+                
+                # 保存引用
+                self.nav_buttons[screen_name] = {
+                    'button': btn,
+                    'icon': icon_label,
+                    'text': text_label
+                }
+                
+                self.add_widget(btn)
             
-            # 创建透明按钮
-            from kivy.uix.behaviors import ButtonBehavior
-            class NavButton(ButtonBehavior, BoxLayout):
-                pass
-            
-            btn = NavButton(orientation="vertical")
-            btn.add_widget(container)
-            btn.bind(on_press=lambda x, s=screen_name: self.switch_screen(s))
-            
-            # 保存引用
-            self.nav_buttons[screen_name] = {
-                'button': btn,
-                'icon': icon_label,
-                'text': text_label
-            }
-            
-            self.add_widget(btn)
+            # 标记为已初始化
+            self._initialized = True
         
         # 默认选中主页
         self.set_active("home")
@@ -931,13 +1324,17 @@ class BottomNavBar(BoxLayout):
         """设置激活状态"""
         for name, widgets in self.nav_buttons.items():
             if name == screen_name:
-                # 激活状态 - B站粉色
-                widgets['icon'].color = (0.98, 0.45, 0.60, 1)
-                widgets['text'].color = (0.98, 0.45, 0.60, 1)
+                # 激活状态 - 现代蓝色渐变
+                widgets['icon'].color = (0.33, 0.73, 0.93, 1)  # Material Blue 400
+                widgets['text'].color = (0.33, 0.73, 0.93, 1)
+                # 增加图标大小以突出激活状态
+                widgets['icon'].font_size = "26sp"
             else:
-                # 未激活状态 - 灰色
-                widgets['icon'].color = (0.6, 0.6, 0.6, 1)
-                widgets['text'].color = (0.6, 0.6, 0.6, 1)
+                # 未激活状态 - 柔和灰色
+                widgets['icon'].color = (0.55, 0.55, 0.55, 1)
+                widgets['text'].color = (0.55, 0.55, 0.55, 1)
+                # 恢复正常大小
+                widgets['icon'].font_size = "24sp"
 
 
 class MainContainer(BoxLayout):
@@ -973,6 +1370,13 @@ class BinanceAnalyzerApp(App):
     def on_start(self):
         # Android运行时权限检查和请求
         self.request_android_permissions()
+        
+        # 设备品牌检测和优化
+        try:
+            from iqoo_optimizer import apply_brand_specific_optimization
+            apply_brand_specific_optimization()
+        except Exception as e:
+            print(f"[设备优化] 优化器加载失败: {e}")
         
         # 获取主页实例并设置定时服务日志回调
         home_screen = self.root.screen_manager.get_screen("home")
@@ -1034,6 +1438,16 @@ class BinanceAnalyzerApp(App):
         try:
             from jnius import autoclass
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            
+            # 检测平台
+            import platform
+            if platform == 'android':
+                # Android环境下由android_service.py管理WakeLock，避免冲突
+                print("[WakeLock] Android环境，WakeLock由后台服务统一管理")
+                self.wake_lock = None
+                return
+            
+            # 非Android环境（如Windows测试）才获取WakeLock
             Context = autoclass('android.content.Context')
             PowerManager = autoclass('android.os.PowerManager')
             

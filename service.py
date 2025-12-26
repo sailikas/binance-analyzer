@@ -163,10 +163,29 @@ class AnalysisService:
                 
                 if comparison["has_changes"]:
                     self._log(f"[定时分析] 检测到变化: +{len(comparison['new'])} -{len(comparison['removed'])}")
-                    self.notif_manager.notify_changes_detected(
-                        len(comparison["new"]),
-                        len(comparison["removed"])
-                    )
+                    
+                    # 准备币种详细信息
+                    new_coins = []
+                    removed_coins = []
+                    
+                    # 新增币种（包含涨幅信息）
+                    for coin_data in comparison["new"]:
+                        symbol = coin_data.get("symbol", "")
+                        # 从当前结果中获取涨幅信息
+                        for result in results:
+                            if result.get("symbol") == symbol:
+                                new_coins.append({
+                                    "symbol": symbol,
+                                    "changes": result.get("changes", {})
+                                })
+                                break
+                    
+                    # 移除币种
+                    for coin_data in comparison["removed"]:
+                        symbol = coin_data.get("symbol", "")
+                        removed_coins.append({"symbol": symbol})
+                    
+                    self.notif_manager.notify_changes_detected(new_coins, removed_coins)
         
         return results
 

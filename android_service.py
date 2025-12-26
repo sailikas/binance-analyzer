@@ -9,7 +9,7 @@ import time
 import datetime
 
 def acquire_wakelock():
-    """获取WakeLock，防止系统休眠"""
+    """获取并保持WakeLock"""
     try:
         from jnius import autoclass
         PythonActivity = autoclass('org.kivy.android.PythonActivity')
@@ -19,24 +19,76 @@ def acquire_wakelock():
         activity = PythonActivity.mActivity
         power_manager = activity.getSystemService(Context.POWER_SERVICE)
         
-        # 创建WakeLock (PARTIAL_WAKE_LOCK: CPU保持运行，屏幕可以关闭)
+        # 使用ACQUIRE_CAUSES_WAKEUP + ON_AFTER_RELEASE标志增强WakeLock
         wake_lock = power_manager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
+            PowerManager.PARTIAL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
             'BinanceAnalyzer::ServiceWakeLock'
         )
-        wake_lock.acquire()
-        print(f"[Android服务] WakeLock已获取")
+        # 设置10分钟超时，需要定期续期
+        wake_lock.acquire(10*60*1000)  # 10分钟超时
+        print(f"[Android服务] WakeLock已获取（10分钟超时）")
         return wake_lock
     except Exception as e:
         print(f"[Android服务] WakeLock获取失败: {e}")
         return None
 
+def renew_wakelock(wake_lock):
+    """定期续期WakeLock"""
+    if wake_lock:
+        try:
+            if hasattr(wake_lock, 'isHeld') and wake_lock.isHeld():
+                # 先释放再重新获取
+                wake_lock.release()
+            wake_lock.acquire(10*60*1000)  # 续期10分钟
+            print(f"[Android服务] WakeLock已续期")
+            return True
+        except Exception as e:
+            print(f"[Android服务] WakeLock续期失败: {e}")
+            return False
+    return False
+
+def heartbeat_loop(wake_lock):
+    """保活心跳循环 - 防止iQOO系统杀死进程"""
+    import time
+    import datetime
+    
+    last_wakelock_renew = datetime.datetime.now()
+    wakelock_interval = 300  # 5分钟续期一次WakeLock
+    heartbeat_count = 0
+    
+    print(f"[保活心跳] 心跳循环已启动")
+    
+    while True:
+        try:
+            now = datetime.datetime.now()
+            heartbeat_count += 1
+            
+            # 定期续期WakeLock
+            if (now - last_wakelock_renew).total_seconds() >= wakelock_interval:
+                renew_wakelock(wake_lock)
+                last_wakelock_renew = now
+            
+            # iQOO专用：轻微CPU活动防止被判定为"无活动"
+            # 这个计算量很小，但能保持CPU活跃
+            dummy_sum = sum(range(1000))
+            
+            # 每30秒一次心跳
+            if heartbeat_count % 2 == 0:  # 每分钟打印一次
+                print(f"[保活心跳] 心跳 #{heartbeat_count} - {now.strftime('%H:%M:%S')}")
+            
+            time.sleep(30)
+            
+        except Exception as e:
+            print(f"[保活心跳] 心跳异常: {e}")
+            time.sleep(30)
+
 def start_foreground_service():
-    """启动前台服务，显示持久通知"""
+    """启动真正的前台服务"""
     try:
         from jnius import autoclass
         
         PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        Service = autoclass('android.app.Service')
         NotificationBuilder = autoclass('android.app.Notification$Builder')
         NotificationChannel = autoclass('android.app.NotificationChannel')
         NotificationManager = autoclass('android.app.NotificationManager')
@@ -49,11 +101,11 @@ def start_foreground_service():
         
         # 创建前台服务通知渠道
         channel_id = "foreground_service_channel"
-        channel_name = "后台服务"
+        channel_name = "后台分析服务"
         importance = NotificationManager.IMPORTANCE_LOW
         
         channel = NotificationChannel(channel_id, channel_name, importance)
-        channel.setDescription("保持应用后台运行")
+        channel.setDescription("保持币安分析工具后台运行")
         notification_service.createNotificationChannel(channel)
         
         # 创建点击通知的Intent
@@ -73,26 +125,27 @@ def start_foreground_service():
         # 创建前台服务通知
         builder = NotificationBuilder(activity, channel_id)
         builder.setContentTitle("币安分析工具")
-        builder.setContentText("后台服务运行中...")
+        builder.setContentText("后台服务运行中，定时分析进行中...")
         builder.setSmallIcon(activity.getApplicationInfo().icon)
         builder.setContentIntent(pending_intent)
         builder.setOngoing(True)  # 不可滑动删除
         
         notification = builder.build()
         
-        # 启动前台服务 (通知ID使用999，避免与普通通知冲突)
+        # 关键修复：真正启动前台服务
         try:
-            Service = autoclass('android.app.Service')
-            # 注意：这里需要Service实例，但在PythonActivity中无法直接调用
-            # 作为替代，我们直接显示持久通知
-            notification_service.notify(999, notification)
-            print(f"[Android服务] 前台服务通知已显示")
+            # 在Android Service模式下，PythonActivity就是Service实例
+            # 使用startForeground()方法真正启动前台服务
+            activity.startForeground(999, notification)
+            print(f"[Android服务] 真正的前台服务已启动")
+            return True
         except Exception as e:
-            print(f"[Android服务] 前台服务启动失败: {e}")
-            # 降级为普通持久通知
+            print(f"[Android服务] startForeground调用失败: {e}")
+            # 降级：显示持久通知
             notification_service.notify(999, notification)
+            print(f"[Android服务] 降级为持久通知")
+            return False
         
-        return True
     except Exception as e:
         print(f"[Android服务] 前台服务创建失败: {e}")
         import traceback
@@ -129,20 +182,26 @@ if __name__ == '__main__':
         
         print(f"[Android服务] 服务实例创建完成")
         
+        # 启动保活心跳线程
+        import threading
+        heartbeat_thread = threading.Thread(target=heartbeat_loop, args=(wake_lock,), daemon=True)
+        heartbeat_thread.start()
+        print(f"[Android服务] 保活心跳线程已启动")
+        
         # 启动服务循环
         service.start_service()
         
-        print(f"[Android服务] 进入服务循环...")
+        print(f"[Android服务] 进入主服务循环...")
         
         # 保持服务运行
         while True:
             time.sleep(60)
-            print(f"[Android服务] 心跳检查 - {datetime.datetime.now()}")
+            print(f"[Android服务] 主循环心跳 - {datetime.datetime.now()}")
             
             # 检查服务是否还在运行
             if not service.is_running:
-                print(f"[Android服务] 服务已停止,退出")
-                break
+                print(f"[Android服务] 分析服务已停止，重启")
+                service.start_service()
     
     except Exception as e:
         print(f"[Android服务] 服务出错: {e}")

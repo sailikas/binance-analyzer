@@ -99,11 +99,24 @@ class NotificationManager:
             current_time = datetime.now().strftime("%H:%M:%S")
             message_with_time = f"[{current_time}] {message}"
             
-            # 创建通知
+# 创建通知
             channel_id = "binance_analyzer_channel"
             builder = NotificationBuilder(activity, channel_id)
             builder.setContentTitle(title)
-            builder.setContentText(message_with_time)
+            
+            # 格式化消息内容，支持多行显示
+            if "\n" in message:
+                # 多行消息（币种变化通知）
+                builder.setContentText(message.split('\n')[0])  # 第一行作为主要内容
+                # 使用BigTextStyle显示完整内容
+                BigTextStyle = autoclass('android.app.Notification$BigTextStyle')
+                style = BigTextStyle()
+                style.bigText(message)
+                builder.setStyle(style)
+            else:
+                # 单行消息
+                builder.setContentText(message_with_time)
+            
             builder.setSmallIcon(activity.getApplicationInfo().icon)
             builder.setAutoCancel(True)
             builder.setContentIntent(pending_intent)  # 设置点击Intent
@@ -229,15 +242,50 @@ class NotificationManager:
         
         return self.send_notification(title, message)
     
-    def notify_changes_detected(self, new_count, removed_count):
-        title = "检测到变化"
-        parts = []
-        if new_count > 0:
-            parts.append(f"新增 {new_count} 个币种")
-        if removed_count > 0:
-            parts.append(f"移除 {removed_count} 个币种")
-        message = "、".join(parts)
-        return self.send_notification(title, message, timeout=15)
+    def notify_changes_detected(self, new_coins, removed_coins):
+        """检测到变化通知，显示具体币种名称和涨幅"""
+        if not new_coins and not removed_coins:
+            return False
+        
+        title = "币种变化通知"
+        message_parts = []
+        
+        # 新增币种（显示涨幅）
+        if new_coins:
+            new_lines = []
+            for coin in new_coins[:10]:  # 最多显示10个
+                symbol = coin.get('symbol', '')
+                changes = coin.get('changes', {})
+                # 格式化涨幅显示
+                change_str = ""
+                if '1d' in changes:
+                    change_str += f" {changes['1d']:.1f}%"
+                if '2d' in changes:
+                    change_str += f" {changes['2d']:.1f}%"
+                if '3d' in changes:
+                    change_str += f" {changes['3d']:.1f}%"
+                
+                new_lines.append(f"+{symbol}{change_str}")
+            
+            if len(new_coins) > 10:
+                new_lines.append(f"... 还有 {len(new_coins) - 10} 个")
+            
+            message_parts.extend(new_lines)
+        
+        # 移除币种（只显示名称）
+        if removed_coins:
+            removed_lines = []
+            for coin in removed_coins[:10]:  # 最多显示10个
+                symbol = coin.get('symbol', '')
+                removed_lines.append(f"-{symbol}")
+            
+            if len(removed_coins) > 10:
+                removed_lines.append(f"... 还有 {len(removed_coins) - 10} 个")
+            
+            message_parts.extend(removed_lines)
+        
+        message = "\n".join(message_parts)
+        return self.send_notification(title, message, timeout=20)
     
     def notify_zero_result(self, previous_count):
         """当从有结果变成0结果时发送通知"""
