@@ -230,10 +230,10 @@ class NotificationManager:
         message_template = self.config_manager.get("serverchan_content", "找到 {count} 个符合条件的交易对")
         message = message_template.replace("{count}", str(symbol_count))
         
-        # 如果有结果数据,添加前3个币种的详细信息
+        # 如果有结果数据,添加前10个币种的详细信息
         if results and len(results) > 0:
-            message += "\n\n【前3名币种】"
-            for i, r in enumerate(results[:3], 1):
+            message += "\n\n【前10名币种】"
+            for i, r in enumerate(results[:10], 1):
                 gain_1d = r.get('gain_1d', 0) * 100
                 gain_2d = r.get('gain_2d', 0) * 100
                 gain_3d = r.get('gain_3d', 0) * 100
@@ -258,12 +258,16 @@ class NotificationManager:
                 changes = coin.get('changes', {})
                 # 格式化涨幅显示
                 change_str = ""
-                if '1d' in changes:
-                    change_str += f" {changes['1d']:.1f}%"
-                if '2d' in changes:
-                    change_str += f" {changes['2d']:.1f}%"
-                if '3d' in changes:
-                    change_str += f" {changes['3d']:.1f}%"
+                try:
+                    if '1d' in changes and changes['1d'] is not None:
+                        change_str += f" {float(changes['1d']):+.1f}%"
+                    if '2d' in changes and changes['2d'] is not None:
+                        change_str += f" {float(changes['2d']):+.1f}%"
+                    if '3d' in changes and changes['3d'] is not None:
+                        change_str += f" {float(changes['3d']):+.1f}%"
+                except (ValueError, TypeError):
+                    # 如果转换失败，使用默认值
+                    change_str = " N/A"
                 
                 new_lines.append(f"+{symbol}{change_str}")
             

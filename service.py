@@ -15,6 +15,8 @@ class AnalysisService:
         self.notif_manager = NotificationManager()
         self.is_running = False
         self.thread = None
+        self.log_callback = None
+        self.schedule_log_callback = None
     
     def start_service(self):
         if self.is_running:
@@ -71,8 +73,15 @@ class AnalysisService:
                         except:
                             pass
                         
-                        # 等待30秒后继续（避免频繁出错）
-                        time.sleep(30)
+                        # 出错后仍然等待完整的间隔时间，避免频繁重试
+                        interval = self.config_manager.get("schedule_interval", 7200)
+                        self._log(f"[定时分析] 等待 {interval} 秒后重试...")
+                        # 分段睡眠，每10秒检查一次是否需要停止
+                        for i in range(0, interval, 10):
+                            if not self.is_running:
+                                self._log("[定时服务] 收到停止信号")
+                                break
+                            time.sleep(min(10, interval - i))
                         continue
                 
                 interval = self.config_manager.get("schedule_interval", 7200)
@@ -89,22 +98,56 @@ class AnalysisService:
                 self._log(f"[定时服务] 循环异常: {str(e)[:100]}")
                 import traceback
                 traceback.print_exc()
-                time.sleep(60)  # 等待1分钟后重试
+                # 使用配置的间隔时间等待
+                interval = self.config_manager.get("schedule_interval", 7200)
+                self._log(f"[定时服务] 等待 {interval} 秒后重试...")
+                for i in range(0, interval, 10):
+                    if not self.is_running:
+                        self._log("[定时服务] 收到停止信号")
+                        break
+                    time.sleep(min(10, interval - i))
         
         self._log("[定时服务] 已停止")
     
-    def _log(self, message):
+    def _log(self, message, progress=None):
         """发送日志到回调函数"""
         print(message)
-        if hasattr(self, 'log_callback') and self.log_callback:
+        
+        # 主页只显示最关键的信息
+        is_important_log = (
+            "[定时服务]" in message or                       # 定时服务状态
+            "[定时分析]" in message and ("开始执行" in message or "执行完成" in message or "出错" in message) or  # 定时分析开始/完成/出错
+            "[心跳]" in message or                           # 心跳信息
+            "[通知]" in message or                           # 通知相关
+            message.startswith("系统就绪") or                # 系统启动
+            message.startswith("✓ 分析完成") or              # 分析完成
+            message.startswith("✗ 出错")                    # 出错信息
+        )
+        
+        # 发送到主页日志（只显示重要日志）
+        if is_important_log and hasattr(self, 'log_callback') and self.log_callback:
             try:
-                self.log_callback(message)
+                self.log_callback(message, progress)
             except:
-                pass
+                try:
+                    # 如果主页回调不支持progress参数，只传递message
+                    self.log_callback(message)
+                except:
+                    pass
+        
+        # 发送到定时页面日志（显示所有日志）
+        if hasattr(self, 'schedule_log_callback') and self.schedule_log_callback:
+            try:
+                self.schedule_log_callback(message, progress)
+            except Exception as e:
+                print(f"[调试] schedule_log_callback调用失败: {e}")
+        else:
+            print(f"[调试] schedule_log_callback未设置或为None")
     
     def _run_analysis(self):
         analyzer_config = self.config_manager.get_analyzer_config()
-        analyzer = BinanceAnalyzer(config=analyzer_config)
+        # 创建分析器并传递回调函数，以便显示详细进度
+        analyzer = BinanceAnalyzer(config=analyzer_config, callback=self._log)
         
         results = analyzer.analyze()
         current_count = len(results)
@@ -169,20 +212,23 @@ class AnalysisService:
                     removed_coins = []
                     
                     # 新增币种（包含涨幅信息）
-                    for coin_data in comparison["new"]:
-                        symbol = coin_data.get("symbol", "")
+                    for symbol in comparison["new"]:
                         # 从当前结果中获取涨幅信息
                         for result in results:
                             if result.get("symbol") == symbol:
+                                # 直接使用result中的涨幅数据
                                 new_coins.append({
                                     "symbol": symbol,
-                                    "changes": result.get("changes", {})
+                                    "changes": {
+                                        "1d": result.get("gain_1d", 0) * 100 if result.get("gain_1d") is not None else 0,
+                                        "2d": result.get("gain_2d", 0) * 100 if result.get("gain_2d") is not None else 0,
+                                        "3d": result.get("gain_3d", 0) * 100 if result.get("gain_3d") is not None else 0
+                                    }
                                 })
                                 break
                     
                     # 移除币种
-                    for coin_data in comparison["removed"]:
-                        symbol = coin_data.get("symbol", "")
+                    for symbol in comparison["removed"]:
                         removed_coins.append({"symbol": symbol})
                     
                     self.notif_manager.notify_changes_detected(new_coins, removed_coins)

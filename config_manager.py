@@ -54,12 +54,20 @@ class ConfigManager:
     def get(self, key, default=None):
         return self.config.get(key, default)
     
-    def set(self, key, value):
+    def set(self, key, value, auto_save=True):
         self.config[key] = value
-        return self.save_config()
+        if auto_save:
+            return self.save_config()
+        return True
     
     def reset_to_default(self):
         self.config = self.default_config.copy()
+        return self.save_config()
+    
+    def set_batch(self, config_dict):
+        """批量设置配置，一次性保存"""
+        for key, value in config_dict.items():
+            self.config[key] = value
         return self.save_config()
     
     def get_analyzer_config(self):

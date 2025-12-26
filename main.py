@@ -183,12 +183,19 @@ class HomeScreen(Screen):
         self.add_log("系统就绪,等待分析...")
     
     @mainthread
-    def add_log(self, message):
+    def add_log(self, message, progress=None):
         """添加日志到日志区域(线程安全)"""
         import datetime
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        
+        # 如果有进度信息，添加到消息中
+        if progress is not None:
+            display_message = f"{message} [{progress}%]"
+        else:
+            display_message = message
+        
         log_label = Label(
-            text=f"[{timestamp}] {message}",
+            text=f"[{timestamp}] {display_message}",
             size_hint_y=None,
             height=dp(48),
             font_size="14sp",
@@ -248,6 +255,7 @@ class HomeScreen(Screen):
         self.update_status()
         
         results_screen = self.manager.get_screen("results")
+        results_screen.set_from_screen("home")  # 设置来源页面
         results_screen.display_results(results)
         # 切换到结果页面
         app = App.get_running_app()
@@ -263,6 +271,7 @@ class ResultsScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.layout = BoxLayout(orientation="vertical", padding=[dp(15), dp(10), dp(15), dp(10)], spacing=dp(10))
+        self.from_screen = "home"  # 记录来源页面
         
         # 顶部栏:返回按钮+标题
         top_bar = BoxLayout(size_hint_y=0.08, spacing=dp(10))
@@ -272,7 +281,7 @@ class ResultsScreen(Screen):
             size_hint_x=0.25,
             font_size="15sp"
         )
-        btn_back.bind(on_press=lambda x: setattr(self.manager, "current", "home"))
+        btn_back.bind(on_press=self.go_back)
         top_bar.add_widget(btn_back)
         
         self.results_label = Label(
@@ -368,99 +377,61 @@ class ResultsScreen(Screen):
             
             card_wrapper.add_widget(card)
             self.results_container.add_widget(card_wrapper)
+    
+    def go_back(self, instance):
+        """返回到来源页面"""
+        self.manager.current = self.from_screen
+    
+    def set_from_screen(self, screen_name):
+        """设置来源页面"""
+        self.from_screen = screen_name
 
 
 class ScheduleScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.config_manager = ConfigManager()
-        self.service = get_service()
         
-        layout = BoxLayout(orientation="vertical", padding=dp(25), spacing=dp(18))
+        layout = BoxLayout(orientation="vertical", padding=[dp(20), dp(15), dp(20), dp(15)], spacing=dp(15))
         
+        # 提示信息
         layout.add_widget(Label(
-            text="定时任务设置",
-            size_hint_y=0.08,
-            font_size="22sp",
-            bold=True,
-            color=(0, 0.63, 0.84, 1)
-        ))
-        
-        switch_box = BoxLayout(size_hint_y=0.08)
-        switch_box.add_widget(Label(text="启用定时分析", font_size="16sp", color=(0.1, 0.1, 0.1, 1)))
-        self.schedule_switch = Switch(active=self.config_manager.get("schedule_enabled", False))
-        self.schedule_switch.bind(active=self.toggle_schedule)
-        switch_box.add_widget(self.schedule_switch)
-        layout.add_widget(switch_box)
-        
-        layout.add_widget(Label(
-            text="运行间隔（分钟）",
-            size_hint_y=0.06,
-            font_size="16sp",
-            color=(0.1, 0.1, 0.1, 1)
-        ))
-        
-        interval_box = BoxLayout(size_hint_y=None, height=dp(60), spacing=dp(10))
-        current_interval = self.config_manager.get("schedule_interval", 7200)
-        minutes = current_interval // 60
-        seconds = current_interval % 60
-        
-        interval_box.add_widget(Label(text="分钟:", size_hint_x=0.25, color=TEXT_PRIMARY, font_size='15sp'))
-        self.minutes_input = TextInput(
-            text=str(minutes),
-            multiline=False,
-            input_filter='int',
-            size_hint_x=0.25,
-            font_size='18sp'
-        )
-        interval_box.add_widget(self.minutes_input)
-        
-        interval_box.add_widget(Label(text="秒:", size_hint_x=0.25, color=TEXT_PRIMARY, font_size='15sp'))
-        self.seconds_input = TextInput(
-            text=str(seconds),
-            multiline=False,
-            input_filter='int',
-            size_hint_x=0.25,
-            font_size='18sp'
-        )
-        interval_box.add_widget(self.seconds_input)
-        layout.add_widget(interval_box)
-        
-        btn_save_interval = create_rounded_button(
-            text="保存间隔",
-            bg_color=PRIMARY_COLOR,
-            size_hint_y=0.10,
-            font_size="17sp",
-            bold=True
-        )
-        btn_save_interval.bind(on_press=self.save_interval)
-        layout.add_widget(btn_save_interval)
-        
-        notify_box1 = BoxLayout(size_hint_y=0.08)
-        notify_box1.add_widget(Label(text="发现变化时通知", font_size="14sp", color=(0.1, 0.1, 0.1, 1)))
-        self.notify_change_switch = Switch(active=self.config_manager.get("notify_on_change", True))
-        self.notify_change_switch.bind(active=lambda sw, val: self.config_manager.set("notify_on_change", val))
-        notify_box1.add_widget(self.notify_change_switch)
-        layout.add_widget(notify_box1)
-        
-        notify_box2 = BoxLayout(size_hint_y=0.08)
-        notify_box2.add_widget(Label(text="分析完成后通知", font_size="14sp", color=(0.1, 0.1, 0.1, 1)))
-        self.notify_complete_switch = Switch(active=self.config_manager.get("notify_on_complete", True))
-        self.notify_complete_switch.bind(active=lambda sw, val: self.config_manager.set("notify_on_complete", val))
-        notify_box2.add_widget(self.notify_complete_switch)
-        layout.add_widget(notify_box2)
-        
-        self.next_run_label = Label(
-            text=self._get_next_run_text(),
-            size_hint_y=0.08,
+            text="定时功能的设置已移动到「设置」页面",
+            size_hint_y=0.05,
             font_size="14sp",
-            color=(0.1, 0.1, 0.1, 1)
-        )
-        layout.add_widget(self.next_run_label)
+            color=TEXT_SECONDARY,
+            halign="center"
+        ))
         
-        layout.add_widget(Label(size_hint_y=0.3))
+        # 日志区域标题和清空按钮
+        log_header = BoxLayout(size_hint_y=0.06, spacing=dp(10))
+        log_header.add_widget(Label(
+            text="运行日志",
+            font_size="16sp",
+            bold=True,
+            color=TEXT_PRIMARY
+        ))
+        btn_clear = create_rounded_button(
+            text="清空",
+            bg_color=INFO_COLOR,
+            size_hint_x=0.2,
+            font_size="14sp"
+        )
+        btn_clear.bind(on_press=lambda x: self.clear_schedule_logs())
+        log_header.add_widget(btn_clear)
+        layout.add_widget(log_header)
+        
+        # 滚动日志区域
+        scroll = ScrollView(size_hint=(1, 0.84))
+        self.schedule_log_container = GridLayout(cols=1, spacing=dp(5), size_hint_y=None, padding=[dp(8), dp(5)])
+        self.schedule_log_container.bind(minimum_height=self.schedule_log_container.setter("height"))
+        scroll.add_widget(self.schedule_log_container)
+        layout.add_widget(scroll)
         
         self.add_widget(layout)
+        
+        # 初始化日志
+        self.add_schedule_log("定时分析日志已初始化")
     
     def _get_next_run_text(self):
         if self.config_manager.get("schedule_enabled", False):
@@ -477,16 +448,16 @@ class ScheduleScreen(Screen):
             total_seconds = minutes * 60 + seconds
             
             if total_seconds < 10:
-                self.next_run_label.text = "错误: 间隔不能少于10秒"
-                self.next_run_label.color = (0.8, 0.2, 0.2, 1)
+                self.status_label.text = "错误: 间隔不能少于10秒"
+                self.status_label.color = (0.8, 0.2, 0.2, 1)
                 return
             
             self.config_manager.set("schedule_interval", total_seconds)
-            self.next_run_label.text = f"已保存: 间隔 {minutes}分{seconds}秒"
-            self.next_run_label.color = (0.2, 0.7, 0.2, 1)
+            self.status_label.text = f"已保存: 间隔 {minutes}分{seconds}秒"
+            self.status_label.color = (0.2, 0.7, 0.2, 1)
         except ValueError:
-            self.next_run_label.text = "错误: 请输入有效数字"
-            self.next_run_label.color = (0.8, 0.2, 0.2, 1)
+            self.status_label.text = "错误: 请输入有效数字"
+            self.status_label.color = (0.8, 0.2, 0.2, 1)
     
     def toggle_schedule(self, switch, value):
         self.config_manager.set("schedule_enabled", value)
@@ -498,9 +469,40 @@ class ScheduleScreen(Screen):
         else:
             self.service.stop_service()
             print("[定时服务] 已停止")
+    
+    @mainthread
+    def add_schedule_log(self, message, progress=None):
+        """添加定时分析日志到日志区域(线程安全)"""
+        print(f"[调试] add_schedule_log被调用: {message}")  # 添加调试信息
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         
-        self.next_run_label.text = self._get_next_run_text()
-        self.next_run_label.color = TEXT_PRIMARY
+        # 如果有进度信息，添加到消息中
+        if progress is not None:
+            display_message = f"{message} [{progress}%]"
+        else:
+            display_message = message
+        
+        log_label = Label(
+            text=f"[{timestamp}] {display_message}",
+            size_hint_y=None,
+            height=dp(48),
+            font_size="14sp",
+            color=TEXT_REGULAR,
+            halign="left",
+            valign="top",
+            text_size=(None, None)
+        )
+        self.schedule_log_container.add_widget(log_label)
+        
+        # 限制日志数量
+        if len(self.schedule_log_container.children) > 30:
+            self.schedule_log_container.remove_widget(self.schedule_log_container.children[-1])
+    
+    def clear_schedule_logs(self):
+        """清空定时分析日志"""
+        self.schedule_log_container.clear_widgets()
+        self.add_schedule_log("定时分析日志已清空")
 
 
 class HistoryScreen(Screen):
@@ -619,30 +621,33 @@ class HistoryScreen(Screen):
         # 分页控制
         self.page_label = Label(
             text="第 1/1 页",
-            font_size="13sp",
-            color=TEXT_PRIMARY
+            font_size="15sp",
+            color=PRIMARY_COLOR,
+            bold=True
         )
         
-        prev_btn = create_rounded_button(
+        self.prev_btn = create_rounded_button(
             text="上一页",
-            bg_color=BG_LIGHT,
-            font_size="12sp",
-            size_hint_x=0.15
+            bg_color=PRIMARY_COLOR,
+            font_size="14sp",
+            size_hint_x=0.2,
+            bold=True
         )
-        prev_btn.bind(on_press=self.prev_page)
+        self.prev_btn.bind(on_press=self.prev_page)
         
-        next_btn = create_rounded_button(
+        self.next_btn = create_rounded_button(
             text="下一页", 
-            bg_color=BG_LIGHT,
-            font_size="12sp",
-            size_hint_x=0.15
+            bg_color=PRIMARY_COLOR,
+            font_size="14sp",
+            size_hint_x=0.2,
+            bold=True
         )
-        next_btn.bind(on_press=self.next_page)
+        self.next_btn.bind(on_press=self.next_page)
         
         options_box.add_widget(checkbox_container)
-        options_box.add_widget(prev_btn)
+        options_box.add_widget(self.prev_btn)
         options_box.add_widget(self.page_label)
-        options_box.add_widget(next_btn)
+        options_box.add_widget(self.next_btn)
         
         filter_layout.add_widget(options_box)
         layout.add_widget(filter_layout)
@@ -776,6 +781,9 @@ class HistoryScreen(Screen):
         self.stats_label.text = f"{date_range_text} {zero_text}: 共 {len(history)} 条"
         self.page_label.text = f"第 {self.current_page}/{self.total_pages} 页"
         
+        # 更新分页按钮状态
+        self.update_pagination_buttons()
+        
         if not page_history:
             self.history_container.add_widget(Label(
                 text="暂无历史记录",
@@ -844,11 +852,32 @@ class HistoryScreen(Screen):
         if record:
             # 切换到结果页面显示历史记录
             results_screen = self.manager.get_screen("results")
+            results_screen.set_from_screen("history")  # 设置来源页面
             results_screen.display_results(record["results"])
             # 通过底部导航栏切换
             app = App.get_running_app()
             if hasattr(app.root, 'nav_bar'):
                 app.root.nav_bar.switch_screen("results")
+    
+    def update_pagination_buttons(self):
+        """更新分页按钮的启用/禁用状态"""
+        # 获取分页按钮的引用（需要在load_history中保存）
+        if hasattr(self, 'prev_btn') and hasattr(self, 'next_btn'):
+            # 更新上一页按钮
+            if self.current_page <= 1:
+                self.prev_btn.disabled = True
+                self.prev_btn.background_color = INFO_COLOR  # 灰色
+            else:
+                self.prev_btn.disabled = False
+                self.prev_btn.background_color = PRIMARY_COLOR  # 蓝色
+            
+            # 更新下一页按钮
+            if self.current_page >= self.total_pages:
+                self.next_btn.disabled = True
+                self.next_btn.background_color = INFO_COLOR  # 灰色
+            else:
+                self.next_btn.disabled = False
+                self.next_btn.background_color = PRIMARY_COLOR  # 蓝色
 
 
 class SettingsScreen(Screen):
@@ -910,6 +939,96 @@ class SettingsScreen(Screen):
             self.inputs[key] = input_field
             box.add_widget(input_field)
             scroll_layout.add_widget(box)
+        
+        # 定时分析设置分组
+        scroll_layout.add_widget(Label(
+            text="定时分析设置",
+            size_hint_y=None,
+            height=dp(48),
+            font_size="16sp",
+            bold=True,
+            color=(0.1, 0.1, 0.1, 1)
+        ))
+        
+        # 启用定时分析开关
+        schedule_switch_box = BoxLayout(size_hint_y=None, height=dp(60), spacing=dp(10))
+        schedule_switch_box.add_widget(Label(
+            text="启用定时分析",
+            size_hint_x=0.7,
+            font_size="14sp",
+            color=TEXT_PRIMARY,
+            halign="left",
+            valign="middle"
+        ))
+        self.schedule_switch = Switch(active=self.config_manager.get("schedule_enabled", False))
+        self.schedule_switch.bind(active=self.toggle_schedule)
+        schedule_switch_box.add_widget(self.schedule_switch)
+        scroll_layout.add_widget(schedule_switch_box)
+        
+        # 运行间隔设置
+        interval_box = BoxLayout(size_hint_y=None, height=dp(70), spacing=dp(10))
+        interval_box.add_widget(Label(
+            text="运行间隔(分:秒)",
+            size_hint_x=0.35,
+            font_size="14sp",
+            color=TEXT_PRIMARY,
+            halign="left",
+            valign="middle"
+        ))
+        
+        current_interval = self.config_manager.get("schedule_interval", 7200)
+        minutes = current_interval // 60
+        seconds = current_interval % 60
+        
+        self.minutes_input = TextInput(
+            text=str(minutes),
+            multiline=False,
+            input_filter='int',
+            size_hint_x=0.25,
+            font_size='16sp'
+        )
+        interval_box.add_widget(self.minutes_input)
+        
+        interval_box.add_widget(Label(text=":", size_hint_x=0.1, color=TEXT_PRIMARY, font_size='16sp'))
+        
+        self.seconds_input = TextInput(
+            text=str(seconds),
+            multiline=False,
+            input_filter='int',
+            size_hint_x=0.25,
+            font_size='16sp'
+        )
+        interval_box.add_widget(self.seconds_input)
+        scroll_layout.add_widget(interval_box)
+        
+        # 通知设置
+        notify_box1 = BoxLayout(size_hint_y=None, height=dp(60), spacing=dp(10))
+        notify_box1.add_widget(Label(
+            text="发现变化时通知",
+            size_hint_x=0.7,
+            font_size="14sp",
+            color=TEXT_PRIMARY,
+            halign="left",
+            valign="middle"
+        ))
+        self.notify_change_switch = Switch(active=self.config_manager.get("notify_on_change", True))
+        self.notify_change_switch.bind(active=lambda sw, val: self.config_manager.set("notify_on_change", val, auto_save=False))
+        notify_box1.add_widget(self.notify_change_switch)
+        scroll_layout.add_widget(notify_box1)
+        
+        notify_box2 = BoxLayout(size_hint_y=None, height=dp(60), spacing=dp(10))
+        notify_box2.add_widget(Label(
+            text="分析完成后通知",
+            size_hint_x=0.7,
+            font_size="14sp",
+            color=TEXT_PRIMARY,
+            halign="left",
+            valign="middle"
+        ))
+        self.notify_complete_switch = Switch(active=self.config_manager.get("notify_on_complete", True))
+        self.notify_complete_switch.bind(active=lambda sw, val: self.config_manager.set("notify_on_complete", val, auto_save=False))
+        notify_box2.add_widget(self.notify_complete_switch)
+        scroll_layout.add_widget(notify_box2)
         
         # Server酱设置分组
         scroll_layout.add_widget(Label(
@@ -1020,16 +1139,6 @@ class SettingsScreen(Screen):
         btn_reset.bind(on_press=self.reset_settings)
         btn_box.add_widget(btn_reset)
         
-        # iQOO优化指南按钮
-        btn_iqoo = create_rounded_button(
-            text="iQOO保活设置",
-            bg_color=WARNING_COLOR,
-            font_size="17sp",
-            bold=True
-        )
-        btn_iqoo.bind(on_press=self.show_iqoo_guide)
-        btn_box.add_widget(btn_iqoo)
-        
         layout.add_widget(btn_box)
         
         self.status_label = Label(
@@ -1043,6 +1152,10 @@ class SettingsScreen(Screen):
     
     def save_settings(self, instance):
         try:
+            # 准备所有配置，一次性保存
+            config_to_save = {}
+            
+            # 收集分析参数
             for key, input_field in self.inputs.items():
                 value_str = input_field.text.strip()
                 if key in ["serverchan_key", "serverchan_title", "serverchan_content"]:
@@ -1053,82 +1166,76 @@ class SettingsScreen(Screen):
                     value = float(value_str)
                 else:
                     value = int(value_str)
-                self.config_manager.set(key, value)
+                config_to_save[key] = value
+                print(f"[调试] 准备保存配置 {key}: {value}")
             
-            self.status_label.text = "✓ 设置已保存"
-            self.status_label.color = (0.2, 0.7, 0.2, 1)
+            # 收集定时设置
+            try:
+                minutes = int(self.minutes_input.text or "0")
+                seconds = int(self.seconds_input.text or "0")
+                total_seconds = minutes * 60 + seconds
+                
+                if total_seconds < 10:
+                    self.status_label.text = "错误: 间隔不能少于10秒"
+                    self.status_label.color = (0.8, 0.2, 0.2, 1)
+                    return
+                
+                config_to_save["schedule_interval"] = total_seconds
+            except ValueError:
+                self.status_label.text = "错误: 时间间隔格式错误"
+                self.status_label.color = (0.8, 0.2, 0.2, 1)
+                return
+            
+            # 添加通知开关状态
+            config_to_save["notify_on_change"] = self.notify_change_switch.active
+            config_to_save["notify_on_complete"] = self.notify_complete_switch.active
+            config_to_save["schedule_enabled"] = self.schedule_switch.active
+            
+            # 批量保存所有配置
+            if self.config_manager.set_batch(config_to_save):
+                self.status_label.text = "✓ 所有设置已保存"
+                self.status_label.color = (0.2, 0.7, 0.2, 1)
+                print(f"[调试] 批量保存成功，共 {len(config_to_save)} 项配置")
+            else:
+                self.status_label.text = "✗ 保存失败"
+                self.status_label.color = (0.8, 0.2, 0.2, 1)
+                
         except ValueError as e:
             self.status_label.text = "输入格式错误"
             self.status_label.color = (0.8, 0.2, 0.2, 1)
+            print(f"[调试] 保存出错: {e}")
     
     def reset_settings(self, instance):
         self.config_manager.reset_to_default()
         for key, input_field in self.inputs.items():
             input_field.text = str(self.config_manager.get(key))
+        
+        # 重置定时设置
+        self.schedule_switch.active = self.config_manager.get("schedule_enabled", False)
+        current_interval = self.config_manager.get("schedule_interval", 7200)
+        minutes = current_interval // 60
+        seconds = current_interval % 60
+        self.minutes_input.text = str(minutes)
+        self.seconds_input.text = str(seconds)
+        self.notify_change_switch.active = self.config_manager.get("notify_on_change", True)
+        self.notify_complete_switch.active = self.config_manager.get("notify_on_complete", True)
     
-    def show_iqoo_guide(self, instance):
-        """显示iQOO保活设置指南"""
-        try:
-            from iqoo_optimizer import show_iqoo_setup_guide
-            guide_text = show_iqoo_setup_guide()
-            
-            # 创建弹窗显示指南
-            from kivy.uix.modalview import ModalView
-            from kivy.uix.label import Label
-            from kivy.uix.scrollview import ScrollView
-            from kivy.uix.boxlayout import BoxLayout
-            
-            view = ModalView(size_hint=(0.9, 0.8), background_color=(1, 1, 1, 0.95))
-            
-            # 主容器
-            main_layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
-            
-            # 标题
-            title_label = Label(
-                text='[b][color=0066cc]iQOO/OriginOS 设置指南[/color][/b]',
-                font_size='18sp',
-                size_hint_y=None,
-                height=dp(40),
-                markup=True,
-                halign='center'
-            )
-            main_layout.add_widget(title_label)
-            
-            # 滚动内容
-            scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
-            label = Label(
-                text=guide_text,
-                text_size=(None, None),  # 让内容自适应
-                font_size='14sp',
-                color=(1.0, 0.98, 0.94, 1),  # 奶白色文字
-                valign='top',
-                halign='left',
-                markup=True,
-                padding=(dp(10), dp(10)),
-                size_hint_y=None,
-                size_hint_x=1
-            )
-            
-            # 使用Clock确保在下一帧更新text_size
-            from kivy.clock import Clock
-            def update_text_size(dt):
-                if view and hasattr(view, 'width'):
-                    label.text_size = (view.width * 0.9 - dp(40), None)
-                    label.texture_update()
-                    label.size = label.texture_size
-            
-            Clock.schedule_once(update_text_size)
-            view.bind(size=lambda *args: Clock.schedule_once(update_text_size))
-            label.bind(texture_size=label.setter('size'))
-            scroll.add_widget(label)
-            main_layout.add_widget(scroll)
-            
-            view.add_widget(main_layout)
-            view.open()
-            
-        except Exception as e:
-            self.status_label.text = f"指南加载失败: {str(e)[:50]}"
-            self.status_label.color = (0.8, 0.2, 0.2, 1)
+    def toggle_schedule(self, switch, value):
+        """切换定时分析开关"""
+        self.config_manager.set("schedule_enabled", value, auto_save=False)
+        
+        # 获取服务实例
+        from service import get_service
+        service = get_service()
+        
+        if value:
+            service.start_service()
+            print("[定时服务] 已启动")
+        else:
+            service.stop_service()
+            print("[定时服务] 已停止")
+    
+    
         self.status_label.text = "✓ 已恢复默认设置"
         self.status_label.color = (0.2, 0.7, 0.2, 1)
 
@@ -1378,10 +1485,12 @@ class BinanceAnalyzerApp(App):
         except Exception as e:
             print(f"[设备优化] 优化器加载失败: {e}")
         
-        # 获取主页实例并设置定时服务日志回调
+        # 获取主页和定时页面实例并设置定时服务日志回调
         home_screen = self.root.screen_manager.get_screen("home")
+        schedule_screen = self.root.screen_manager.get_screen("schedule")
         service = get_service()
         service.log_callback = home_screen.add_log
+        service.schedule_log_callback = schedule_screen.add_schedule_log
         
         config_manager = ConfigManager()
         if config_manager.get("schedule_enabled", False):
