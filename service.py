@@ -169,6 +169,7 @@ class AnalysisService:
             import platform
             if platform == 'android':
                 try:
+                    # 方法1: 直接导入
                     from android_service import acquire_wakelock
                     self.wake_lock = acquire_wakelock()
                     self.last_wakelock_renew = datetime.datetime.now()
@@ -177,7 +178,26 @@ class AnalysisService:
                     else:
                         print("[定时服务] WakeLock获取失败")
                 except ImportError:
-                    print("[定时服务] android_service模块未找到，跳过WakeLock")
+                    try:
+                        # 方法2: 使用jnius直接获取WakeLock
+                        from jnius import autoclass
+                        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                        Context = autoclass('android.content.Context')
+                        PowerManager = autoclass('android.os.PowerManager')
+                        
+                        activity = PythonActivity.mActivity
+                        power_manager = activity.getSystemService(Context.POWER_SERVICE)
+                        
+                        self.wake_lock = power_manager.newWakeLock(
+                            PowerManager.PARTIAL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
+                            'BinanceAnalyzer::ServiceWakeLock'
+                        )
+                        self.wake_lock.acquire(10*60*1000)  # 10分钟超时
+                        self.last_wakelock_renew = datetime.datetime.now()
+                        print("[定时服务] WakeLock已获取（直接方式）")
+                    except Exception as e:
+                        print(f"[定时服务] 直接获取WakeLock失败: {e}")
+                        print("[定时服务] 息屏运行可能不稳定")
                 except Exception as e:
                     print(f"[定时服务] WakeLock获取异常: {e}")
             else:
@@ -189,11 +209,13 @@ class AnalysisService:
         """释放WakeLock"""
         if self.wake_lock:
             try:
-                self.wake_lock.release()
+                if hasattr(self.wake_lock, 'isHeld') and self.wake_lock.isHeld():
+                    self.wake_lock.release()
                 self.wake_lock = None
                 print("[定时服务] WakeLock已释放")
             except Exception as e:
                 print(f"[定时服务] WakeLock释放异常: {e}")
+                self.wake_lock = None  # 确保即使释放失败也清除引用
     
     def _renew_wakelock(self):
         """续期WakeLock"""
@@ -202,21 +224,30 @@ class AnalysisService:
                 import platform
                 if platform == 'android':
                     try:
+                        # 方法1: 使用android_service续期
                         from android_service import renew_wakelock
                         if renew_wakelock(self.wake_lock):
                             self.last_wakelock_renew = datetime.datetime.now()
                             print("[定时服务] WakeLock已续期")
                             return True
                         else:
-                            print("[定时服务] WakeLock续期失败，重新获取")
-                            self._acquire_wakelock()
-                            return self.wake_lock is not None
+                            print("[定时服务] WakeLock续期失败，使用直接方式")
                     except ImportError:
-                        print("[定时服务] android_service模块未找到，跳过WakeLock续期")
-                        return False
+                        print("[定时服务] 使用直接方式续期WakeLock")
+                    
+                    # 方法2: 直接续期
+                    try:
+                        if hasattr(self.wake_lock, 'isHeld') and self.wake_lock.isHeld():
+                            self.wake_lock.release()
+                        self.wake_lock.acquire(10*60*1000)  # 续期10分钟
+                        self.last_wakelock_renew = datetime.datetime.now()
+                        print("[定时服务] WakeLock已续期（直接方式）")
+                        return True
                     except Exception as e:
-                        print(f"[定时服务] WakeLock续期异常: {e}")
-                        return False
+                        print(f"[定时服务] 直接续期失败: {e}")
+                        # 重新获取
+                        self._acquire_wakelock()
+                        return self.wake_lock is not None
             except Exception as e:
                 print(f"[定时服务] WakeLock续期异常: {e}")
         return False
