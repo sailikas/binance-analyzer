@@ -18,6 +18,8 @@ android.accept_sdk_license = True
 
 # 应用图标和开屏动画
 icon.filename = %(source.dir)s/icon.png
+icon.adaptive_foreground.filename = %(source.dir)s/icon.png
+icon.adaptive_background.filename = %(source.dir)s/icon.png
 presplash.filename = %(source.dir)s/presplash.png
 android.presplash_color = #66B5FC
 

@@ -221,74 +221,105 @@ class BinanceAnalyzer:
     
     def analyze(self):
         """执行完整分析流程"""
-        self._log("=== 开始币安合约三日涨幅分析 ===")
-        self._log(f"筛选条件：涨幅 >= {self.config['MIN_CHANGE_PERCENT']}%")
-        self._log(f"分析时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # 获取符合流动性条件的合约
-        liquid_symbols = self.get_liquid_symbols()
-        if not liquid_symbols:
-            self._log("?? 无符合条件的活跃合约列表")
-            return []
-        
-        # 限制分析数量
-        if len(liquid_symbols) > self.config["MAX_ANALYZE_SYMBOLS"]:
-            liquid_symbols = liquid_symbols[:self.config["MAX_ANALYZE_SYMBOLS"]]
-            self._log(f"仅分析前 {self.config['MAX_ANALYZE_SYMBOLS']} 个高流动性永续合约")
-        else:
+        try:
+            # 记录分析开始时间
+            start_time = datetime.now()
+            start_timestamp = start_time.isoformat()
+            
+            # 获取活跃合约列表
+            active_symbols = self.get_active_symbols()
+            if not active_symbols:
+                self._log("警告: 无活跃合约列表，跳过")
+                return {"results": [], "start_time": start_timestamp, "end_time": start_timestamp, "duration": 0}
+            
+            # 获取24小时行情数据，过滤低流动性币种
+            liquid_symbols = self.get_liquid_symbols()
+            if not liquid_symbols:
+                self._log("警告: 无符合条件的活跃合约列表")
+                return {"results": [], "start_time": start_timestamp, "end_time": start_timestamp, "duration": 0}
+            
+            # 开始分析
+            self._log("=== 开始币安合约三日涨幅分析 ===")
+            self._log(f"筛选条件：涨幅 >= {self.config['MIN_CHANGE_PERCENT']}%")
+            self._log(f"分析开始时间：{start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                
+                # 限制分析数量
+            max_symbols = self.config['MAX_ANALYZE_SYMBOLS']
+            if len(liquid_symbols) > max_symbols:
+                self._log(f"仅分析前 {max_symbols} 个高流动性永续合约")
+                liquid_symbols = liquid_symbols[:max_symbols]
+            
             self._log(f"开始分析所有 {len(liquid_symbols)} 个高流动性永续合约")
-        
-        results = []
-        total = len(liquid_symbols)
-        start_time = time.time()
-        
-        for i, symbol in enumerate(liquid_symbols, 1):
-            # 计算进度
-            progress = int((i / total) * 100)
             
-            # 计算预估剩余时间
-            if i > 1:
-                elapsed = time.time() - start_time
-                avg_per_symbol = elapsed / (i - 1)
-                remaining = (total - i) * avg_per_symbol
-                eta = f" (预计剩余 {remaining:.0f} 秒)"
-            else:
-                eta = ""
+            results = []
+            total = len(liquid_symbols)
+            process_start_time = time.time()
             
-            self._log(f"[{i}/{total}] 正在分析 {symbol}...{eta}", progress)
+            for i, symbol in enumerate(liquid_symbols, 1):
+                    # 计算预计剩余时间
+                    if i > 1:
+                        elapsed = time.time() - process_start_time
+                        avg_per_symbol = elapsed / (i - 1)
+                        remaining = (total - i) * avg_per_symbol
+                        eta = f" (预计剩余 {remaining:.0f} 秒)"
+                    else:
+                        eta = ""
+                    
+                    # 计算进度百分比
+                    progress = int((i / total) * 100)
+                    self._log(f"[{i}/{total}] 正在分析 {symbol}...{eta}", progress)
+                    
+                    # 获取K线数据
+                    klines = self.get_klines_data(symbol, 3)
+                    if not klines or len(klines) < 3:
+                        continue
+                    
+                    # 计算涨幅
+                    gains = self.calculate_gains(klines)
+                    if not gains:
+                        continue
+                    
+                    # 检查条件
+                    conditions = self.check_conditions(gains)
+                    if not conditions:
+                        continue
+                    
+                    # 添加到结果
+                    result = {
+                        "symbol": symbol,
+                        "gain_1d": gains["gain_1d"],
+                        "gain_2d": gains["gain_2d"],
+                        "gain_3d": gains["gain_3d"],
+                        "changes": gains
+                    }
+                    results.append(result)
+                
+                # 记录分析结束时间
+            end_time = datetime.now()
+            end_timestamp = end_time.isoformat()
+            duration = (end_time - start_time).total_seconds()
             
-            # 获取K线数据
-            klines = self.get_klines_data(symbol, 3)
-            if not klines or len(klines) < 3:
-                continue
+            self._log(f"分析完成！找到 {len(results)} 个符合条件的交易对", 100)
+            self._log(f"分析结束时间：{end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            self._log(f"分析耗时：{duration:.1f} 秒")
             
-            # 计算涨幅
-            gains = self.calculate_gains(klines)
-            if not gains:
-                continue
-            
-            # 检查条件
-            conditions = self.check_conditions(gains)
-            if not conditions:
-                continue
-            
-            # 添加到结果
-            result = {
-                "symbol": symbol,
-                "gain_1d": gains["gain_1d"],
-                "gain_2d": gains["gain_2d"],
-                "gain_3d": gains["gain_3d"],
-                "conditions": conditions,
-                "conditions_count": len(conditions),
-                "timestamp": datetime.now().isoformat()
+            return {
+                "results": results,
+                "start_time": start_timestamp,
+                "end_time": end_timestamp,
+                "duration": duration
             }
-            results.append(result)
             
-            # API限频
-            time.sleep(self.config["REQUEST_DELAY"])
-        
-        # 排序结果
-        results.sort(key=lambda x: (x["conditions_count"], x["gain_3d"]), reverse=True)
-        
-        self._log(f"? 分析完成！找到 {len(results)} 个符合条件的交易对", 100)
-        return results
+        except Exception as e:
+            end_time = datetime.now()
+            end_timestamp = end_time.isoformat()
+            duration = (end_time - start_time).total_seconds() if 'start_time' in locals() else 0
+            
+            self._log(f"分析出错: {str(e)}")
+            return {
+                "results": [],
+                "start_time": start_timestamp if 'start_timestamp' in locals() else end_timestamp,
+                "end_time": end_timestamp,
+                "duration": duration,
+                "error": str(e)
+            }

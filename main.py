@@ -183,10 +183,23 @@ class HomeScreen(Screen):
         self.add_log("系统就绪,等待分析...")
     
     @mainthread
-    def add_log(self, message, progress=None):
+    def add_log(self, message, progress=None, timestamp=None):
         """添加日志到日志区域(线程安全)"""
         import datetime
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        
+        # 使用传入的时间戳，如果没有则使用当前时间
+        if timestamp:
+            if isinstance(timestamp, str):
+                # 如果是ISO格式字符串，解析为时间对象
+                try:
+                    dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    time_str = dt.strftime("%H:%M:%S")
+                except:
+                    time_str = datetime.datetime.now().strftime("%H:%M:%S")
+            else:
+                time_str = timestamp.strftime("%H:%M:%S")
+        else:
+            time_str = datetime.datetime.now().strftime("%H:%M:%S")
         
         # 如果有进度信息，添加到消息中
         if progress is not None:
@@ -195,7 +208,7 @@ class HomeScreen(Screen):
             display_message = message
         
         log_label = Label(
-            text=f"[{timestamp}] {display_message}",
+            text=f"[{time_str}] {display_message}",
             size_hint_y=None,
             height=dp(48),
             font_size="14sp",
@@ -218,9 +231,15 @@ class HomeScreen(Screen):
     def update_status(self):
         latest = self.db_manager.get_latest_analysis()
         if latest:
-            timestamp = latest["timestamp"][:19].replace("T", " ")
+            # 使用end_time作为主要显示时间
+            timestamp = latest.get("end_time", latest.get("timestamp", ""))[:19].replace("T", " ")
             count = latest["symbol_count"]
-            self.status_label.text = f"最近分析: {timestamp} | 找到 {count} 个符合条件的币种"
+            duration = latest.get("duration", 0)
+            
+            if duration > 0:
+                self.status_label.text = f"最近分析: {timestamp} | 找到 {count} 个币种 | 耗时 {duration:.1f}秒"
+            else:
+                self.status_label.text = f"最近分析: {timestamp} | 找到 {count} 个符合条件的币种"
     
     def start_analysis(self, instance):
         self.add_log("开始分析...")
@@ -230,9 +249,10 @@ class HomeScreen(Screen):
         try:
             config = self.config_manager.get_analyzer_config()
             analyzer = BinanceAnalyzer(config=config, callback=self.analysis_callback)
-            results = analyzer.analyze()
+            analysis_data = analyzer.analyze()
+            results = analysis_data.get("results", [])
             
-            self.db_manager.save_analysis(results, config)
+            self.db_manager.save_analysis(analysis_data, config)
             
             Clock.schedule_once(lambda dt: self.show_results(results), 0)
             
@@ -471,11 +491,24 @@ class ScheduleScreen(Screen):
             print("[定时服务] 已停止")
     
     @mainthread
-    def add_schedule_log(self, message, progress=None):
+    def add_schedule_log(self, message, progress=None, timestamp=None):
         """添加定时分析日志到日志区域(线程安全)"""
         print(f"[调试] add_schedule_log被调用: {message}")  # 添加调试信息
         import datetime
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        
+        # 使用传入的时间戳，如果没有则使用当前时间
+        if timestamp:
+            if isinstance(timestamp, str):
+                # 如果是ISO格式字符串，解析为时间对象
+                try:
+                    dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    time_str = dt.strftime("%H:%M:%S")
+                except:
+                    time_str = datetime.datetime.now().strftime("%H:%M:%S")
+            else:
+                time_str = timestamp.strftime("%H:%M:%S")
+        else:
+            time_str = datetime.datetime.now().strftime("%H:%M:%S")
         
         # 如果有进度信息，添加到消息中
         if progress is not None:
@@ -484,7 +517,7 @@ class ScheduleScreen(Screen):
             display_message = message
         
         log_label = Label(
-            text=f"[{timestamp}] {display_message}",
+            text=f"[{time_str}] {display_message}",
             size_hint_y=None,
             height=dp(48),
             font_size="14sp",
@@ -814,6 +847,7 @@ class HistoryScreen(Screen):
             
             # 时间和数量信息
             timestamp = h["timestamp"][:16].replace("T", " ")
+            duration = h.get("duration", 0)
             info_box = BoxLayout(orientation="vertical", spacing=dp(4))
             info_box.add_widget(Label(
                 text=timestamp,
@@ -825,13 +859,22 @@ class HistoryScreen(Screen):
             
             # 使用颜色控制的结果数量
             count_color = self.get_result_count_color(h["symbol_count"])
-            info_box.add_widget(Label(
-                text=f"找到 {h['symbol_count']} 个币种",
-                font_size="13sp",
-                color=count_color,
-                size_hint_y=None,
-                height=dp(32)
-            ))
+            if duration > 0:
+                info_box.add_widget(Label(
+                    text=f"找到 {h['symbol_count']} 个币种 | 耗时 {duration:.1f}秒",
+                    font_size="13sp",
+                    color=count_color,
+                    size_hint_y=None,
+                    height=dp(32)
+                ))
+            else:
+                info_box.add_widget(Label(
+                    text=f"找到 {h['symbol_count']} 个币种",
+                    font_size="13sp",
+                    color=count_color,
+                    size_hint_y=None,
+                    height=dp(32)
+                ))
             item.add_widget(info_box)
             
             btn_view = create_rounded_button(
@@ -1196,6 +1239,22 @@ class SettingsScreen(Screen):
                 self.status_label.text = "✓ 所有设置已保存"
                 self.status_label.color = (0.2, 0.7, 0.2, 1)
                 print(f"[调试] 批量保存成功，共 {len(config_to_save)} 项配置")
+                
+                # 如果定时服务正在运行，需要重启以应用新的间隔设置
+                if config_to_save.get("schedule_enabled", False):
+                    try:
+                        from service import get_service
+                        service = get_service()
+                        if service.is_running:
+                            print("[设置] 重启定时服务以应用新的间隔设置")
+                            service.stop_service()
+                            import time
+                            time.sleep(1)  # 等待1秒确保完全停止
+                            service.start_service()
+                            self.status_label.text = "✓ 设置已保存，定时服务已重启"
+                    except Exception as e:
+                        print(f"[设置] 重启定时服务失败: {e}")
+                        self.status_label.text = "✓ 设置已保存，但重启服务失败"
             else:
                 self.status_label.text = "✗ 保存失败"
                 self.status_label.color = (0.8, 0.2, 0.2, 1)
@@ -1551,9 +1610,17 @@ class BinanceAnalyzerApp(App):
             # 检测平台
             import platform
             if platform == 'android':
-                # Android环境下由android_service.py管理WakeLock，避免冲突
-                print("[WakeLock] Android环境，WakeLock由后台服务统一管理")
-                self.wake_lock = None
+                # Android环境下获取WakeLock
+                try:
+                    from android_service import acquire_wakelock
+                    self.wake_lock = acquire_wakelock()
+                    if self.wake_lock:
+                        print("[WakeLock] Android环境WakeLock已获取")
+                    else:
+                        print("[WakeLock] Android环境WakeLock获取失败")
+                except Exception as e:
+                    print(f"[WakeLock] Android环境WakeLock获取异常: {e}")
+                    self.wake_lock = None
                 return
             
             # 非Android环境（如Windows测试）才获取WakeLock
@@ -1581,8 +1648,18 @@ class BinanceAnalyzerApp(App):
         """释放WakeLock"""
         if self.wake_lock:
             try:
-                self.wake_lock.release()
-                print("[WakeLock] 已释放")
+                import platform
+                if platform == 'android':
+                    # Android环境下释放WakeLock
+                    try:
+                        self.wake_lock.release()
+                        print("[WakeLock] Android环境WakeLock已释放")
+                    except Exception as e:
+                        print(f"[WakeLock] Android环境WakeLock释放异常: {e}")
+                else:
+                    # 非Android环境释放WakeLock
+                    self.wake_lock.release()
+                    print("[WakeLock] 已释放")
             except Exception as e:
                 print(f"[WakeLock] 释放失败: {e}")
     
